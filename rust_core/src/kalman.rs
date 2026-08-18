@@ -117,4 +117,18 @@ impl KalmanFilter2D {
             r,
         }
     }
+
+    pub fn predict(&mut self, dt:f64) -> [f64; 4] {
+        self.f.0[2] = dt;
+        self.f.0[7] = dt;
+        self.x = self.f.mul_vec(&self.x);
+        let ft = self.f.transpose();
+        let fp = self.f.mul(&self.p);
+        self.p = fp,mul(&ft).add(&self.q);
+
+        self.x
+    }
+    
+
+    
 }
