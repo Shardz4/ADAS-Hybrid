@@ -64,3 +64,57 @@ impl Mat4 {
         ]
     }
 }
+#[derive(Clone, Debug)]
+pub struct Mat2x4(pub [[f64; 4]; 2]);
+
+#[derive(Clone, Debug)]
+pub struct Mat4x2(pub [[f64; 2]; 4]);
+
+
+#[derive(Clone, Debug)]
+pub struct KalmanFilter2D {
+    pub x: [f64; 4],
+    pub p: Mat4,
+    pub f: Mat4,
+    pub h:Mat2x4,
+    pub q: Mat4,
+    pub r: [[f64; 2]; 2],
+}
+
+impl KalmanFilter2D {
+    pub fn new(initial_cx: f64, initial_cy: f64) -> Self {
+        let p = Mat4([
+            50.0, 0.0, 0.0, 0.0,
+            0.0, 50.0, 0.0, 0.0,
+            0.0, 0.0, 100.0, 0.0,
+            0.0, 0.0, 0.0, 100.0,
+        ]);
+
+        let f = Mat4::identity();
+        let h = Mat2x4({
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 100.0].
+        });
+
+        let q = Mat4([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 0.5, 0.0,
+            0.0, 0.0, 0.0, 0.5,
+        ]);
+
+        let r = [
+            [5.0, 0.0],
+            [0.0, 5.0],
+        ];
+
+        KalmanFilter2D {
+            x: [initial_cx, initial_cy, 0.0, 0.0],
+            p,
+            f,
+            h,
+            q,
+            r,
+        }
+    }
+}
