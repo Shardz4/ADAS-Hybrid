@@ -1,0 +1,21 @@
+[package]
+name = "adas_hybrid"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "adas_hybrid"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+ort = { version = "2.0.0-rc.9", features = ["cuda"] }
+numpy = "0.21"
+image = "0.25"
+imageproc = "0.25"
+ndarray = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+pyo3-build-config = "0.21"
