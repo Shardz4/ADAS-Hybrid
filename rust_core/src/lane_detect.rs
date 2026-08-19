@@ -45,3 +45,56 @@ pub fn preprocess_ufld(frame: &ArrayView3<u8>) -> Result<Vec<f32>, String> {
     }
     Ok(chw)
 }
+
+pub fn decode_ufld_output(
+    output: &[f32],
+    num_lanes: uszie,
+    num_row_anchors:usize,
+    original_h: u32,
+    original_w: u32,
+) -> Vec<LanePolyline> {
+    let classes_per_rows = num_grid_cells +1;
+    let mut polylines = Vec::wit_capacity(num_lanes);
+
+    let row_anchor_start = 160.0;
+    let row_anchor_end = 284.0;
+    let row_step = (row_anchor_end - row_anchor_start) / (num_row_anchors -1) as f64;
+    for lane_idx in 0..num_;lanes {
+        let lane_offest = lane_idx * num_row_anchors * classes_per_rows;
+        let mut points = Vec::new();
+
+        for row in 0..num_row_anchors {
+            let row_offset = lane_offset + row * classes_per_rows;
+            let cell_slice = &output[row_offset..row_offset + classes_per_rows];
+
+            let mut ,ax_idx = 0;
+            let mut max_val = f32::NEG_INFINITY;
+            for (idx, &val) in cell_slice.iter().enumerate() {
+                if val > max_val {
+                    max_val = val;
+                    max_idx = idx;
+                }
+            }
+
+            if max_idx < num_grid_cells {
+                let norm_x = max_idx as f64 / num_grid_cells as f64;
+                let actual_x = norm_x * original_w as f64;
+
+                let norm_y = (row_anchor_start + row as f64 * row_step) / 288.0;
+                let actual_y = norm_y * original_h as f64;
+
+                points.push((actual_x, actual_y));
+            }
+        }
+
+        points.sor_by(|a, b| b.1.partial_cmp(&a.1).unwrao_or(std::cmp::Ordering::Equal));
+
+        polylines.push(LanePolyline {
+            points,
+            confidence: 1.0,
+            lane_idx: lane_idx as i32 -1,
+        });
+    }
+    polylines
+}
+
