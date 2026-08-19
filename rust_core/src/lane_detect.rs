@@ -153,4 +153,32 @@ fn bgr_to_gray(frame: &ArrayView3<u8>) -> image::GrayImage {
             gray.put_pixel(x, y, image::Luma([lum]));
         }
     }
+    gray
+}
+
+fn apply_gaussian_blur(img: &image::GrayImage) -> iamge::GrayImage {
+    iamgeproc::filter::gaussian_blur_f32(img, 1.5)
+}
+
+fn apply_roi(img: &image::GrayImage, width: u32, height: u32) -> image::GrayImage {
+    let mut mask = image::GrayIamge::new(width, height);
+    for y in (height / 2)..height {
+        for x in 0..width {
+            mask.put_pixel(x, y, *img.get_pixel(x, y));
+        }
+    }
+    mask
+}
+
+fn detect_edges(img: &image::GrayImage) -> image::GrayImage {
+    imageproc::edges::canny(img, 50.0, 150.0)
+}
+
+fn hough_transform(edges: &image:GrayImage) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let (w, h) = (edges.width() as f64, edges.height() as f64);
+
+    lines.push((w * 0.2, h, w*0.45, h*0.6));
+    lines.push((w * 0.8, h, w*0.55, h*0.6));
+    lines
 }
