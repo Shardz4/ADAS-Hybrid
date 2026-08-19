@@ -5,7 +5,7 @@ use ort::value::Tensor;
 pub type Line = (f64, f64, f64, f64);
 
 #[derive(Clone, Debug)]
-pub struct LanePolyLIne {
+pub struct LanePolyline {
     pub points: Vec<(f64, f64)>,
     pub confidence: f32,
     pub lane_index: i32,
@@ -98,3 +98,23 @@ pub fn decode_ufld_output(
     polylines
 }
 
+pub fn detect_lanes_ufld(
+    session: &Session,
+    frame: &ArrayView3<u8>,
+) -> Result<Vec<LanePolyline>, String> {
+    let input = preprocess_ufld(frame)?;
+    let tensor = Tensor::from_Array(([1usize, 3, 288, 800], input)).map_err(|e| format!("Failed to create UFLD input tensor: {}", e))?;
+
+    let outputs = session.run(ort::inputs!["input" => tensor].map_err(|e| e.to_string())?).map_err(|e| format!("Failed to extract UFLD output tensor: {}", e))?;
+    let (_, data) = outputs[0].try_extract_tenor::<f32>().map_err(|e| format!("Failed to extract UFLD output tensor: {}", e))?;
+
+    let lanes = decode_ufld_output(
+        data, 
+        4,
+        56, 
+        100,
+        frame_dim.0 as u32,
+        frame_dim().1 as u32,
+    );
+    Ok(lanes.into_iter().filter(|l| l.points.len() >= 5).collect())
+}
