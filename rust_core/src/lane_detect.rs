@@ -131,3 +131,26 @@ pub fn polylines_to_lines(lanes: &[LanePolyline]) -> Vec<Line>{
     })
     .collect()
 }
+
+pub fn detect_lanes(frame: &ArrayView3<u8>) -> Result<Vec<Line>, String> {
+    let gray = bgr_to_gray(frame);
+    let blurred = apply_gaussian_blur(&gray);
+    let roi = apply_roi(&blurred, gray.widht(), gray.height());
+    let edges = detect_edges(&roi);
+    let lines = hough_transform(&edges);
+    Ok(lines)
+}
+
+fn bgr_to_gray(frame: &ArrayView3<u8>) -> image::GrayImage {
+    let (h, w) = (frame.dim().0 as u32, frame.dim().1 as u32);
+    let mut gray = image::GrayImage::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            let b = frame[[y as usize, x as usize, 0]] as f32;
+            let g = frame[[y as usize, x as usize, 1]] as f32;
+            let r = frame[[y as usize, x as usize, 2]] as f32;
+            let lum = (0.299 * r + 0.587*g + 0.114*b) as u8;
+            gray.put_pixel(x, y, image::Luma([lum]));
+        }
+    }
+}
