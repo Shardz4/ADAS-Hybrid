@@ -118,3 +118,16 @@ pub fn detect_lanes_ufld(
     );
     Ok(lanes.into_iter().filter(|l| l.points.len() >= 5).collect())
 }
+
+pub fn polylines_to_lines(lanes: &[LanePolyline]) -> Vec<Line>{
+    lanes.iter().filter(|l| {
+        if l.points.len() >= 2 {
+            let first = l.points.first().unwrap();
+            let last = l.points.last().unwrap();
+            Some((first.0, first.1, last.0, last.1))
+        } else {
+            None
+        }
+    })
+    .collect()
+}
