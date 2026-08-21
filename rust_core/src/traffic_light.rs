@@ -72,3 +72,48 @@ impl TemporalVoter {
         self.confirmed
     }
 }
+
+pub struct trafficLightDetector {
+    detector: Session,
+    classifier: Session,
+    voter: TemporalVoter,
+}
+
+impl TrafficLightDetector {
+    pub fn new(detetector_path: &str, classifier_path: &str) -> Result<Self, String> {
+        let build = |path: &str| -> ort::Result<Session> {
+            Session::builder()?
+                .with_optimization_level(GraphOptimizationLevel::Level3)?
+                .with_execution_providers([ort::execution_priveders::CUDAExecutionProvider::default().build()])?
+                .commit_from_file(path)
+        };
+        Ok(TrafficLightDetector {
+            detector: build(detector_path).map(|e| format!("Light detector load error {}", e))?,
+            classifier: build(classifier_path).map_err(|e| format!("Light classifier load error: {}", e))?,
+            voter: TemporalVoter::new(5,3),
+        })
+    }
+    pub fn detect(&mut self, frame_bytes: &[u8], width: u32, height: u32) -> Vec<TrafficLightResult> {
+        let fixture_bboxes = self.detect_fixtures(frame_bytes, width, height);
+        if fixture_bboxes.is_empty() {
+            self.voter.vote(LightStatus::None);
+            return vec![];
+        }
+
+        let mut results = Vec::new();
+        for (bbox, det_conf) in &fixture_bboxes {
+            let crop = self.crop_and_resize(frame_bytes, width, height, bbox, 64, 32);
+            let (status, cls_conf) = self.classify_crop(&crop);
+            let voted = self.voter.vote(status);
+
+            results.push(TrafficLightResult {
+                bbox: *bbox,
+                status,
+                det_confidence: *det_conf,
+                cls_confidence: cls_conf,
+                voted_status: voted,
+            });
+        }
+        results
+    }
+}
