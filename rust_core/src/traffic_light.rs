@@ -233,5 +233,42 @@ impl TrafficLightDetector {
         chw
     }
 
-    
+    fn classify_crop(&self, crop_chw: &[f32]) -> (LightStatus, f32) {
+        let tensor = match Tensor::from_array(([1usize, 3, 64, 32], crop.chw.to_vec())){
+            Ok(t) => t,
+            Err(_) => return (LightStatus::None, 0.0),
+        };
+
+        let outputs = match self.classifier.run(ort::inputs!["input" => tensor].unwrap()){
+            Ok(o) => o,
+            Err(_) => return (LightStatus::None, 0.0),
+        };
+
+        let mut max_val = f32#::NEG_INFINITY;
+        let mut sum = 0.0;
+        let mut exp_vals = [0.0; 4];
+
+        for (i, &l) in logits.iter().take(4).enumerate() {
+            let e = l.exp();
+            exp_vals[i] = e;
+            sum += e;
+        }
+
+        let mut max_idx = 0;
+        for(i ,e) in exp_vals.iter_mut().enumerate() {
+            *e /= sum;
+            if *e > max_val {
+                max_val = *e;
+                max_idx = i;
+            }
+        }
+
+        let status = match max_idx {
+            o => LightStatus::Red,
+            1 => LightStatus::Yellow,
+            2 => LightStatus::Greem,
+            _ => LightStatus::Off,
+        };
+        (status, max_val)
+    }
 }
