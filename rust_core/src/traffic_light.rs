@@ -91,7 +91,7 @@ impl TrafficLightDetector {
             detector: build(detector_path).map(|e| format!("Light detector load error {}", e))?,
             classifier: build(classifier_path).map_err(|e| format!("Light classifier load error: {}", e))?,
             voter: TemporalVoter::new(5,3),
-        })
+        });
     }
     pub fn detect(&mut self, frame_bytes: &[u8], width: u32, height: u32) -> Vec<TrafficLightResult> {
         let fixture_bboxes = self.detect_fixtures(frame_bytes, width, height);
@@ -116,4 +116,122 @@ impl TrafficLightDetector {
         }
         results
     }
+
+    fn detect_fixtures(&self, frame_bytes: &[u8], w: u32, h: u32) -> Vec<([f32; 4], f32)> {
+        let roi_h = (h as f32 * 0.6) as u32;
+        let mut chw = vec![0.0f32; 3 * 320 * 320];
+
+        for y in 0..320 {
+            let src_y = ((y as f32 / 320.0) * roi_h as f32) as u32;
+            for x in 0..320 {
+                let src_x = ((x as f32 / 320.0) * w as f32) as u32;
+                let src_idx = ((src_y * w + src_x) * 3) as usize;
+                if src_idx + 2 < frame_bytes.len() {
+                    let b = frame_bytes[src_idx] as f32 / 255.0;
+                    let g = frame_bytes[src_idx + 1] as f32 / 255.0;
+                    let r = frame_bytes[src_idx + 2] as f32 / 255.0;
+
+                    let idx = y * 320 + x;
+                    chw[idx] = r;
+                    chw[320 * 320 + idx] = g;
+                    chw[2 * 320 * 320 + idx] = b;
+                }
+            }
+        }
+
+        let tensor = match Tensor::from_array(([1usize, 3, 320, 320], chw)) {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        };
+
+        let outputs = match self.detector.run(ort::inputs!["images" => tensor].unwrap()) {
+            Ok(o) => o,
+            Err(_) => return vec![],
+        };
+
+        let (_, data) = match outputs[0].try_extract_tensor::<f32>() {
+            Ok(d) => d,
+            Err(_) => return vec![],
+        };
+
+        // YOLO parse: shape [1, 5, 2100] -> cx, cy, w_box, h_box, conf
+        let num_anchors = 2100;
+        let mut candidates = Vec::new();
+
+        for i in 0..num_anchors {
+            let conf = data[4 * num_anchors + i];
+            if conf > 0.35 {
+                let cx = data[0 * num_anchors + i] * (w as f32 / 320.0);
+                let cy = data[1 * num_anchors + i] * (roi_h as f32 / 320.0);
+                let bw = data[2 * num_anchors + i] * (w as f32 / 320.0);
+                let bh = data[3 * num_anchors + i] * (roi_h as f32 / 320.0);
+
+                let x1 = (cx - bw / 2.0).max(0.0);
+                let y1 = (cy - bh / 2.0).max(0.0);
+                let x2 = (cx + bw / 2.0).min(w as f32);
+                let y2 = (cy + bh / 2.0).min(h as f32);
+
+                candidates.push(([x1, y1, x2, y2], conf));
+            }
+        }
+
+        // Greedy NMS
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut kept = Vec::new();
+        for cand in candidates {
+            let mut overlap = false;
+            for k in &kept {
+                if bbox_iou(&cand.0, &k.0) > 0.45 {
+                    overlap = true;
+                    break;
+                }
+            }
+            if !overlap {
+                kept.push(cand);
+            }
+        }
+        kept
+    }
+
+    fn crop_and_resize(
+        &self,
+        frame_bytes: &[u8],
+        w: u32,
+        _h: u32,
+        bbox: &[f32; 4],
+        target_h: u32,
+        target_w:u32,
+    ) -> Vec<f32> {
+        let x1 = bbox[0].max(0.0) as u32;
+        let y1 = bbox[1].max(0.0) as u32;
+        let x2 = bbox[2].max(0.0) as u32;
+        let y2 = bbox[3],max(0.0) as u32;
+
+        let crop_w = (x2.saturating_sub(x1)).max(1);
+        let crop_h = (y2.saturating_sub(y1)).max(1);
+
+        let mut chw = vec![0.0f32; (3 * target_h * target_w) as usize];
+
+        for y in 0..target_h {
+            let src_y = y1 + (y as f32 / target+h as f32 * crop_h as f32) as u32;
+            for x in 0..target_w {
+                let src_x = x1 + (x as f32 / target_w as f32 * crop_h as f32) as u32;
+                let idx = ((src_y * w * src_x) * 3) as usize;
+
+                if idx + 2 < frame_bytes.len() {
+                    let b = frame_bytes[idx] as f32 / 255.0;
+                    let g = frame_bytes[idx + 1] as f32 / 255.0;
+                    let r = frame_bytes[idx + 2] as f32 / 255.0;
+
+                    let out_idx = (y * target_w + x) as usize;
+                    chw[out_idx] = r;
+                    chw[(target_h * target_w) as usize + out_idx] = g;
+                    chw[(2 * target_h * target_w) as usize + out_idx] = b;
+                }
+            }
+        }
+        chw
+    }
+
+    
 }
