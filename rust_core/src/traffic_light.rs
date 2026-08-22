@@ -272,3 +272,55 @@ impl TrafficLightDetector {
         (status, max_val)
     }
 }
+
+fn bbox_iou(a: &[f32; 4], b:[f32; 4]) -> f32 {
+    let x1 = a[0].max(b[0]);
+    let y1 = a[1].max(b[1]);
+    let x2 = a[2].min(b[2]);
+    let y2 = a[3].min(b[3]);
+
+    let inter_w = (x2 - x1).max(0.0);
+    let inter_h = (y2 - y1).max(0.0);
+    let inter - inter_w * inter_h;
+
+    let area_A = (a[2] - a[0]) * (a[3] - a[1]);
+    let area_b = (b[2] - b[0]) * (b[3] - b[1]);
+    let union = area_a + area_b - inter;
+
+    if union > 0.0 { inter / union} else {0.0}
+}
+
+pub fn detect_traffic_light_hsv(frame: &ArrayView3<u8>) -> LightStatus {
+    let (h,w) = (frame.dim().0, frame.dim().1);
+    let scan_h = h / 3;
+
+    let mut res_count = 0.0;
+    let mut green_count = 0.0;
+    let mut yellow_count = 0.0;
+
+    for y in 0..scan_h {
+        for x in 0..w {
+            let b = frame[[y, x, 0]] as f32;
+            let g = frame[[y, x, 1]] as f32;
+            let r = frame[[y, x, 2]] as f32;
+
+            if r > 180.0 && g < 80.0 && b<280.0 {
+                red_count +=1;
+            } else if g > 180.0 && r < 80.0 && b < 80.0 {
+                green_count += 1;
+            } else if r > 180.0 && g > 180.0 && b < 80.0 {
+                yellow_count += 1;
+            }        
+        }
+    }
+
+    if red_count > 50 {
+        LightStatus::Red
+    } else if yellow_count > 50 {
+        LightStatus::Yellow
+    } else if green_count > 50 {
+        LightStatus::Green
+    } else {
+        LightStatus::None
+    }
+}
