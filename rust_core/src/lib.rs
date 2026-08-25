@@ -181,49 +181,179 @@ impl AdasBrain {
 
         Ok(py_list.into())
     }
-    pub fn detect_lanes_nn<'py>(&self, py:Python<'py>. frame: PyReadonlyArray3<'_, u8>,) -> PyResult<PyObject> {
-        let frame_arr = frame.as_Array();
+
+    pub fn detect_lanes_nn<'py>(
+        &self,
+        py: Python<'py>,
+        frame: PyReadonlyArray3<'_, u8>,
+    ) -> PyResult<PyObject> {
+        let frame_arr = frame.as_array();
         if let Some(ref session) = self.lane_session {
-            let lanes = lane_detect::detect_lanes_ufld(session, &frame_arr).map_err(pyo3::exceptions::PyruntimeError::new_err)?;
+            let lanes = lane_detect::detect_lanes_ufld(session, &frame_arr)
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
             let py_list = PyList::empty_bound(py);
             for lane in lanes {
                 let point_list = PyList::empty_bound(py);
-                for (x,y) in  lane.points {
-                    point_lsit.append((x, y))?;
+                for (x, y) in lane.points {
+                    point_list.append((x, y))?;
                 }
-                Ok(py_lsit.into())
-            } else {
-                let lines = lane_detect::detect_lanes(&frame_arr).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
-
-                lewt py_list = PyList::Empty_bound(py);
-                for line in lines {
-                    py_list.append(vec![(line.0, line.1), (line.2, line.3)])?;
-                }
-                Ok(py_list.into())
+                py_list.append(point_list)?;
             }
-        }
+            Ok(py_list.into())
+        } else {
+            let lines = lane_detect::detect_lanes(&frame_arr)
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
-        pub fn detect_traffic_lights(&mut self, py: Python, frame_bytes: &[u8], width: u32, height: u32,) -> PyResult<PyObject> {
-            if let Some(ref mut detector) = self.light_detector {
-                let results = detector.detect(frame_bytes, width, height);
-                let py_list - PyList::empty_bound(py);
-
-                for res in results {
-                    let dict = PyDict::new_bound(py);
-                    dict.set_item("bbox", vec![res.bbox[0], res.bbox[1], res.bbox[2], res.bbox[3]])?;
-                    dict.set_item("status", format!("{:?}", res.status))?;
-                    dict.set_item("voted_status", format!({":?"}, res.voted_status))?;
-                    dict.set_item("confidence", res.cls_confidence)?;
-                    py_list.append(dict)?;
-                }
-                Ok(py_list.into())
-            } else {
-                let py_list = PyList::empty_bound(py);
-                Ok(py_list.into())
+            let py_list = PyList::empty_bound(py);
+            for line in lines {
+                py_list.append(vec![(line.0, line.1), (line.2, line.3)])?;
             }
+            Ok(py_list.into())
         }
-
-        
     }
+
+    pub fn detect_traffic_lights(
+        &mut self,
+        py: Python,
+        frame_bytes: &[u8],
+        width: u32,
+        height: u32,
+    ) -> PyResult<PyObject> {
+        if let Some(ref mut detector) = self.light_detector {
+            let results = detector.detect(frame_bytes, width, height);
+            let py_list = PyList::empty_bound(py);
+
+            for res in results {
+                let dict = PyDict::new_bound(py);
+                dict.set_item("bbox", vec![res.bbox[0], res.bbox[1], res.bbox[2], res.bbox[3]])?;
+                dict.set_item("status", format!("{:?}", res.status))?;
+                dict.set_item("voted_status", format!("{:?}", res.voted_status))?;
+                dict.set_item("confidence", res.cls_confidence)?;
+                py_list.append(dict)?;
+            }
+            Ok(py_list.into())
+        } else {
+            let py_list = PyList::empty_bound(py);
+            Ok(py_list.into())
+        }
+    }
+
+    pub fn detect_signs(
+        &self,
+        py: Python,
+        frame_bytes: &[u8],
+        width: u32,
+        height: u32,
+        conf_threshold: f32,
+    ) -> PyResult<PyObject> {
+        let detections = py.allow_threads(|| {
+            let mut chw = vec![0.0f32; 3 * 320 * 320];
+            let x_scale = width as f32 / 320.0;
+            let y_scale = height as f32 / 320.0;
+
+            for y in 0..320 {
+                let src_y = ((y as f32 * y_scale) as u32).min(height - 1);
+                for x in 0..320 {
+                    let src_x = ((x as f32 * x_scale) as u32).min(width - 1);
+                    let src_idx = ((src_y * width + src_x) * 3) as usize;
+                    if src_idx + 2 < frame_bytes.len() {
+                        chw[y * 320 + x] = frame_bytes[src_idx + 2] as f32 / 255.0;
+                        chw[320 * 320 + y * 320 + x] = frame_bytes[src_idx + 1] as f32 / 255.0;
+                        chw[2 * 320 * 320 + y * 320 + x] = frame_bytes[src_idx] as f32 / 255.0;
+                    }
+                }
+            }
+
+            let tensor = match Tensor::from_array(([1usize, 3, 320, 320], chw)) {
+                Ok(t) => t,
+                Err(_) => return Vec::new(),
+            };
+
+            let outputs = match self.sign_session.run(ort::inputs!["images" => tensor].unwrap()) {
+                Ok(o) => o,
+                Err(_) => return Vec::new(),
+            };
+
+            let (_, data) = match outputs[0].try_extract_tensor::<f32>() {
+                Ok(d) => d,
+                Err(_) => return Vec::new(),
+            };
+
+            let num_anchors = 2100;
+            let num_classes = 4;
+            let mut boxes = Vec::new();
+
+            for i in 0..num_anchors {
+                let mut max_cls_conf = 0.0f32;
+                let mut best_cls = 0;
+
+                for c in 0..num_classes {
+                    let score = data[(4 + c) * num_anchors + i];
+                    if score > max_cls_conf {
+                        max_cls_conf = score;
+                        best_cls = c;
+                    }
+                }
+
+                if max_cls_conf >= conf_threshold {
+                    let cx = data[0 * num_anchors + i] * x_scale;
+                    let cy = data[1 * num_anchors + i] * y_scale;
+                    let w = data[2 * num_anchors + i] * x_scale;
+                    let h = data[3 * num_anchors + i] * y_scale;
+
+                    let x1 = (cx - w / 2.0).max(0.0);
+                    let y1 = (cy - h / 2.0).max(0.0);
+                    let x2 = (cx + w / 2.0).min(width as f32);
+                    let y2 = (cy + h / 2.0).min(height as f32);
+
+                    boxes.push(([x1, y1, x2, y2], max_cls_conf, best_cls));
+                }
+            }
+
+            boxes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let mut final_boxes = Vec::new();
+            for b in boxes {
+                let mut overlap = false;
+                for fb in &final_boxes {
+                    if calculate_iou(&b.0, &fb.0) > 0.45 {
+                        overlap = true;
+                        break;
+                    }
+                }
+                if !overlap {
+                    final_boxes.push(b);
+                }
+            }
+            final_boxes
+        });
+
+        let py_list = PyList::empty_bound(py);
+        for (bbox, conf, class_id) in detections {
+            let dict = PyDict::new_bound(py);
+            dict.set_item("class_id", class_id)?;
+            dict.set_item("conf", conf)?;
+            dict.set_item("bbox", vec![bbox[0], bbox[1], bbox[2], bbox[3]])?;
+            py_list.append(dict)?;
+        }
+
+        Ok(py_list.into())
+    }
+}
+
+fn calculate_iou(a: &[f32; 4], b: &[f32; 4]) -> f32 {
+    let x1 = a[0].max(b[0]);
+    let y1 = a[1].max(b[1]);
+    let x2 = a[2].min(b[2]);
+    let y2 = a[3].min(b[3]);
+
+    let inter_w = (x2 - x1).max(0.0);
+    let inter_h = (y2 - y1).max(0.0);
+    let inter = inter_w * inter_h;
+
+    let area_a = (a[2] - a[0]) * (a[3] - a[1]);
+    let area_b = (b[2] - b[0]) * (b[3] - b[1]);
+    let union = area_a + area_b - inter;
+
+    if union > 0.0 { inter / union } else { 0.0 }
 }
