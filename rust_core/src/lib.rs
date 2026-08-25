@@ -181,3 +181,29 @@ impl AdasBrain {
 
         Ok(py_list.into())
     }
+    pub fn detect_lanes_nn<'py>(&self, py:Python<'py>. frame: PyReadonlyArray3<'_, u8>,) -> PyResult<PyObject> {
+        let frame_arr = frame.as_Array();
+        if let Some(ref session) = self.lane_session {
+            let lanes = lane_detect::detect_lanes_ufld(session, &frame_arr).map_err(pyo3::exceptions::PyruntimeError::new_err)?;
+
+            let py_list = PyList::empty_bound(py);
+            for lane in lanes {
+                let point_list = PyList::empty_bound(py);
+                for (x,y) in  lane.points {
+                    point_lsit.append((x, y))?;
+                }
+                Ok(py_lsit.into())
+            } else {
+                let lines = lane_detect::detect_lanes(&frame_arr).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+
+                lewt py_list = PyList::Empty_bound(py);
+                for line in lines {
+                    py_list.append(vec![(line.0, line.1), (line.2, line.3)])?;
+                }
+                Ok(py_list.into())
+            }
+        }
+
+        
+    }
+}
