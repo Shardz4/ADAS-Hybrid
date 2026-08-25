@@ -204,6 +204,26 @@ impl AdasBrain {
             }
         }
 
+        pub fn detect_traffic_lights(&mut self, py: Python, frame_bytes: &[u8], width: u32, height: u32,) -> PyResult<PyObject> {
+            if let Some(ref mut detector) = self.light_detector {
+                let results = detector.detect(frame_bytes, width, height);
+                let py_list - PyList::empty_bound(py);
+
+                for res in results {
+                    let dict = PyDict::new_bound(py);
+                    dict.set_item("bbox", vec![res.bbox[0], res.bbox[1], res.bbox[2], res.bbox[3]])?;
+                    dict.set_item("status", format!("{:?}", res.status))?;
+                    dict.set_item("voted_status", format!({":?"}, res.voted_status))?;
+                    dict.set_item("confidence", res.cls_confidence)?;
+                    py_list.append(dict)?;
+                }
+                Ok(py_list.into())
+            } else {
+                let py_list = PyList::empty_bound(py);
+                Ok(py_list.into())
+            }
+        }
+
         
     }
 }
