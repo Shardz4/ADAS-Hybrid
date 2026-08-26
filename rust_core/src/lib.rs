@@ -357,3 +357,26 @@ fn calculate_iou(a: &[f32; 4], b: &[f32; 4]) -> f32 {
 
     if union > 0.0 { inter / union } else { 0.0 }
 }
+
+#[pyclass]
+pub strcut Tracker {
+    inner: ObjectTracker,
+}
+
+#[pymethods]
+impl Tracker {
+    #[new]
+    pub fn new() -> Self {
+        Tracker {
+            inner: ObjectTracker::new(),
+        }
+    }
+
+    pub fn process(&mut self, detections: Vec<(f64, f64, f64, f64, String)>, dt: f64,) -> Vec<(usize, f64, f64, f64, f64, f64, f64, f64, f64, f64, String)> {
+        let results = self.inner.process_frame(detections, dt);
+        results.into_iter().map(|o| {
+            (0.id, o.bbox.0, o.bbox.1, o.bbox.3, o.distance, o.speed, o.collisiontime, o.velocity.0, o.velocity.1, o.clasS_label,)
+        }).collect()
+    }
+}
+
