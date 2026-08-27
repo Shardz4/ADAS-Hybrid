@@ -1,1 +1,46 @@
+# Rust build artifacts
+target/
+**/target/
+**/*.rs.bk
+Cargo.lock.backup
+
+# Python build & bytecode artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Model binaries & weights (large files)
+models/*.onnx
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.engine
+models/vlm/
+*.onnx
+*.engine
+
+# IDEs & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Documentation / plan scratch files
 implementation_plan.md
+task.md
+walkthrough.md
