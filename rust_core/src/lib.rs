@@ -12,7 +12,7 @@ use pyo3::types::{PyDict, PyList};
 
 use lane_manager::LaneManager as CoreLaneManager;
 use object_proc::ObjectTracker;
-use traffic_light::{detect_traffic_light_hsv, LightStatus, TrafficLightDetector};
+use traffic_light::{detect_traffic_light_hsv, TrafficLightDetector};
 
 #[pyclass]
 pub struct AdasBrain {
@@ -37,8 +37,6 @@ impl AdasBrain {
             Session::builder()
                 .map_err(|e| e.to_string())?
                 .with_optimization_level(GraphOptimizationLevel::Level3)
-                .map_err(|e| e.to_string())?
-                .with_execution_providers([ort::execution_providers::CUDAExecutionProvider::default().build()])
                 .map_err(|e| e.to_string())?
                 .commit_from_file(path)
                 .map_err(|e| e.to_string())
@@ -68,106 +66,97 @@ impl AdasBrain {
     }
 
     pub fn detect_vehicles(
-        &self,
+        &mut self,
         py: Python,
         frame_bytes: &[u8],
         width: u32,
         height: u32,
         conf_threshold: f32,
     ) -> PyResult<PyObject> {
-        let detections = py.allow_threads(|| {
-            let mut chw = vec![0.0f32; 3 * 640 * 640];
-            let x_scale = width as f32 / 640.0;
-            let y_scale = height as f32 / 640.0;
+        let mut chw = vec![0.0f32; 3 * 640 * 640];
+        let x_scale = width as f32 / 640.0;
+        let y_scale = height as f32 / 640.0;
 
-            for y in 0..640 {
-                let src_y = ((y as f32 * y_scale) as u32).min(height - 1);
-                for x in 0..640 {
-                    let src_x = ((x as f32 * x_scale) as u32).min(width - 1);
-                    let src_idx = ((src_y * width + src_x) * 3) as usize;
-                    if src_idx + 2 < frame_bytes.len() {
-                        let b = frame_bytes[src_idx] as f32 / 255.0;
-                        let g = frame_bytes[src_idx + 1] as f32 / 255.0;
-                        let r = frame_bytes[src_idx + 2] as f32 / 255.0;
+        for y in 0..640usize {
+            let src_y = ((y as f32 * y_scale) as u32).min(height - 1);
+            for x in 0..640usize {
+                let src_x = ((x as f32 * x_scale) as u32).min(width - 1);
+                let src_idx = ((src_y * width + src_x) * 3) as usize;
+                if src_idx + 2 < frame_bytes.len() {
+                    let b = frame_bytes[src_idx] as f32 / 255.0;
+                    let g = frame_bytes[src_idx + 1] as f32 / 255.0;
+                    let r = frame_bytes[src_idx + 2] as f32 / 255.0;
 
-                        let idx = y * 640 + x;
-                        chw[idx] = r;
-                        chw[640 * 640 + idx] = g;
-                        chw[2 * 640 * 640 + idx] = b;
-                    }
+                    let idx = y * 640 + x;
+                    chw[idx] = r;
+                    chw[640 * 640 + idx] = g;
+                    chw[2 * 640 * 640 + idx] = b;
+                }
+            }
+        }
+
+        let tensor = Tensor::from_array(([1usize, 3, 640, 640], chw))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let outputs = self.vehicle_session.run(ort::inputs!["images" => tensor])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let (_, data) = outputs[0].try_extract_tensor::<f32>()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let num_anchors = 8400;
+        let mut boxes: Vec<([f32; 4], f32, usize, &str)> = Vec::new();
+
+        for i in 0..num_anchors {
+            let mut max_cls_conf = 0.0f32;
+            let mut best_cls = 0;
+
+            // Check standard vehicle classes: 2: car, 3: motorcycle, 5: bus, 7: truck
+            for &c in &[2usize, 3, 5, 7] {
+                let score = data[(4 + c) * num_anchors + i];
+                if score > max_cls_conf {
+                    max_cls_conf = score;
+                    best_cls = c;
                 }
             }
 
-            let tensor = match Tensor::from_array(([1usize, 3, 640, 640], chw)) {
-                Ok(t) => t,
-                Err(_) => return Vec::new(),
-            };
+            if max_cls_conf >= conf_threshold {
+                let cx = data[0 * num_anchors + i] * x_scale;
+                let cy = data[1 * num_anchors + i] * y_scale;
+                let w = data[2 * num_anchors + i] * x_scale;
+                let h = data[3 * num_anchors + i] * y_scale;
 
-            let outputs = match self.vehicle_session.run(ort::inputs!["images" => tensor].unwrap()) {
-                Ok(o) => o,
-                Err(_) => return Vec::new(),
-            };
+                let x1 = (cx - w / 2.0).max(0.0);
+                let y1 = (cy - h / 2.0).max(0.0);
+                let x2 = (cx + w / 2.0).min(width as f32);
+                let y2 = (cy + h / 2.0).min(height as f32);
 
-            let (_, data) = match outputs[0].try_extract_tensor::<f32>() {
-                Ok(d) => d,
-                Err(_) => return Vec::new(),
-            };
+                let label = match best_cls {
+                    2 => "car",
+                    3 => "motorcycle",
+                    5 => "bus",
+                    7 => "truck",
+                    _ => "vehicle",
+                };
 
-            let num_anchors = 8400;
-            let mut boxes = Vec::new();
+                boxes.push(([x1, y1, x2, y2], max_cls_conf, best_cls, label));
+            }
+        }
 
-            for i in 0..num_anchors {
-                let mut max_cls_conf = 0.0f32;
-                let mut best_cls = 0;
-
-                // Check standard vehicle classes: 2: car, 3: motorcycle, 5: bus, 7: truck
-                for &c in &[2usize, 3, 5, 7] {
-                    let score = data[(4 + c) * num_anchors + i];
-                    if score > max_cls_conf {
-                        max_cls_conf = score;
-                        best_cls = c;
-                    }
-                }
-
-                if max_cls_conf >= conf_threshold {
-                    let cx = data[0 * num_anchors + i] * x_scale;
-                    let cy = data[1 * num_anchors + i] * y_scale;
-                    let w = data[2 * num_anchors + i] * x_scale;
-                    let h = data[3 * num_anchors + i] * y_scale;
-
-                    let x1 = (cx - w / 2.0).max(0.0);
-                    let y1 = (cy - h / 2.0).max(0.0);
-                    let x2 = (cx + w / 2.0).min(width as f32);
-                    let y2 = (cy + h / 2.0).min(height as f32);
-
-                    let label = match best_cls {
-                        2 => "car",
-                        3 => "motorcycle",
-                        5 => "bus",
-                        7 => "truck",
-                        _ => "vehicle",
-                    };
-
-                    boxes.push(([x1, y1, x2, y2], max_cls_conf, best_cls, label));
+        boxes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut detections: Vec<([f32; 4], f32, usize, &str)> = Vec::new();
+        for b in boxes {
+            let mut overlap = false;
+            for fb in &detections {
+                if calculate_iou(&b.0, &fb.0) > 0.45 {
+                    overlap = true;
+                    break;
                 }
             }
-
-            boxes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let mut final_boxes = Vec::new();
-            for b in boxes {
-                let mut overlap = false;
-                for fb in &final_boxes {
-                    if calculate_iou(&b.0, &fb.0) > 0.45 {
-                        overlap = true;
-                        break;
-                    }
-                }
-                if !overlap {
-                    final_boxes.push(b);
-                }
+            if !overlap {
+                detections.push(b);
             }
-            final_boxes
-        });
+        }
 
         let py_list = PyList::empty_bound(py);
         for (bbox, conf, class_id, label) in detections {
@@ -183,12 +172,12 @@ impl AdasBrain {
     }
 
     pub fn detect_lanes_nn<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         frame: PyReadonlyArray3<'_, u8>,
     ) -> PyResult<PyObject> {
         let frame_arr = frame.as_array();
-        if let Some(ref session) = self.lane_session {
+        if let Some(ref mut session) = self.lane_session {
             let lanes = lane_detect::detect_lanes_ufld(session, &frame_arr)
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
@@ -240,93 +229,84 @@ impl AdasBrain {
     }
 
     pub fn detect_signs(
-        &self,
+        &mut self,
         py: Python,
         frame_bytes: &[u8],
         width: u32,
         height: u32,
         conf_threshold: f32,
     ) -> PyResult<PyObject> {
-        let detections = py.allow_threads(|| {
-            let mut chw = vec![0.0f32; 3 * 320 * 320];
-            let x_scale = width as f32 / 320.0;
-            let y_scale = height as f32 / 320.0;
+        let mut chw = vec![0.0f32; 3 * 320 * 320];
+        let x_scale = width as f32 / 320.0;
+        let y_scale = height as f32 / 320.0;
 
-            for y in 0..320 {
-                let src_y = ((y as f32 * y_scale) as u32).min(height - 1);
-                for x in 0..320 {
-                    let src_x = ((x as f32 * x_scale) as u32).min(width - 1);
-                    let src_idx = ((src_y * width + src_x) * 3) as usize;
-                    if src_idx + 2 < frame_bytes.len() {
-                        chw[y * 320 + x] = frame_bytes[src_idx + 2] as f32 / 255.0;
-                        chw[320 * 320 + y * 320 + x] = frame_bytes[src_idx + 1] as f32 / 255.0;
-                        chw[2 * 320 * 320 + y * 320 + x] = frame_bytes[src_idx] as f32 / 255.0;
-                    }
+        for y in 0..320usize {
+            let src_y = ((y as f32 * y_scale) as u32).min(height - 1);
+            for x in 0..320usize {
+                let src_x = ((x as f32 * x_scale) as u32).min(width - 1);
+                let src_idx = ((src_y * width + src_x) * 3) as usize;
+                if src_idx + 2 < frame_bytes.len() {
+                    chw[y * 320 + x] = frame_bytes[src_idx + 2] as f32 / 255.0;
+                    chw[320 * 320 + y * 320 + x] = frame_bytes[src_idx + 1] as f32 / 255.0;
+                    chw[2 * 320 * 320 + y * 320 + x] = frame_bytes[src_idx] as f32 / 255.0;
+                }
+            }
+        }
+
+        let tensor = Tensor::from_array(([1usize, 3, 320, 320], chw))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let outputs = self.sign_session.run(ort::inputs!["images" => tensor])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let (_, data) = outputs[0].try_extract_tensor::<f32>()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let num_anchors = 2100;
+        let num_classes = 4;
+        let mut boxes: Vec<([f32; 4], f32, usize)> = Vec::new();
+
+        for i in 0..num_anchors {
+            let mut max_cls_conf = 0.0f32;
+            let mut best_cls = 0;
+
+            for c in 0..num_classes {
+                let score = data[(4 + c) * num_anchors + i];
+                if score > max_cls_conf {
+                    max_cls_conf = score;
+                    best_cls = c;
                 }
             }
 
-            let tensor = match Tensor::from_array(([1usize, 3, 320, 320], chw)) {
-                Ok(t) => t,
-                Err(_) => return Vec::new(),
-            };
+            if max_cls_conf >= conf_threshold {
+                let cx = data[0 * num_anchors + i] * x_scale;
+                let cy = data[1 * num_anchors + i] * y_scale;
+                let w = data[2 * num_anchors + i] * x_scale;
+                let h = data[3 * num_anchors + i] * y_scale;
 
-            let outputs = match self.sign_session.run(ort::inputs!["images" => tensor].unwrap()) {
-                Ok(o) => o,
-                Err(_) => return Vec::new(),
-            };
+                let x1 = (cx - w / 2.0).max(0.0);
+                let y1 = (cy - h / 2.0).max(0.0);
+                let x2 = (cx + w / 2.0).min(width as f32);
+                let y2 = (cy + h / 2.0).min(height as f32);
 
-            let (_, data) = match outputs[0].try_extract_tensor::<f32>() {
-                Ok(d) => d,
-                Err(_) => return Vec::new(),
-            };
+                boxes.push(([x1, y1, x2, y2], max_cls_conf, best_cls));
+            }
+        }
 
-            let num_anchors = 2100;
-            let num_classes = 4;
-            let mut boxes = Vec::new();
-
-            for i in 0..num_anchors {
-                let mut max_cls_conf = 0.0f32;
-                let mut best_cls = 0;
-
-                for c in 0..num_classes {
-                    let score = data[(4 + c) * num_anchors + i];
-                    if score > max_cls_conf {
-                        max_cls_conf = score;
-                        best_cls = c;
-                    }
-                }
-
-                if max_cls_conf >= conf_threshold {
-                    let cx = data[0 * num_anchors + i] * x_scale;
-                    let cy = data[1 * num_anchors + i] * y_scale;
-                    let w = data[2 * num_anchors + i] * x_scale;
-                    let h = data[3 * num_anchors + i] * y_scale;
-
-                    let x1 = (cx - w / 2.0).max(0.0);
-                    let y1 = (cy - h / 2.0).max(0.0);
-                    let x2 = (cx + w / 2.0).min(width as f32);
-                    let y2 = (cy + h / 2.0).min(height as f32);
-
-                    boxes.push(([x1, y1, x2, y2], max_cls_conf, best_cls));
+        boxes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut detections: Vec<([f32; 4], f32, usize)> = Vec::new();
+        for b in boxes {
+            let mut overlap = false;
+            for fb in &detections {
+                if calculate_iou(&b.0, &fb.0) > 0.45 {
+                    overlap = true;
+                    break;
                 }
             }
-
-            boxes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let mut final_boxes = Vec::new();
-            for b in boxes {
-                let mut overlap = false;
-                for fb in &final_boxes {
-                    if calculate_iou(&b.0, &fb.0) > 0.45 {
-                        overlap = true;
-                        break;
-                    }
-                }
-                if !overlap {
-                    final_boxes.push(b);
-                }
+            if !overlap {
+                detections.push(b);
             }
-            final_boxes
-        });
+        }
 
         let py_list = PyList::empty_bound(py);
         for (bbox, conf, class_id) in detections {

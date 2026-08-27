@@ -1,0 +1,10 @@
+C:\Users\CREWMOBILE\Desktop\ADAS VLA\rust_core\target\debug\deps\ort_sys-20d9f14fa7d9c184.d: C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\lib.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\mod.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\dirs.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\link_error.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\stub.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\version.rs
+
+C:\Users\CREWMOBILE\Desktop\ADAS VLA\rust_core\target\debug\deps\libort_sys-20d9f14fa7d9c184.rmeta: C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\lib.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\mod.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\dirs.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\link_error.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\stub.rs C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\version.rs
+
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\lib.rs:
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\mod.rs:
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\internal\dirs.rs:
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\link_error.rs:
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\stub.rs:
+C:\Users\CREWMOBILE\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.13\src\version.rs:

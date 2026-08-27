@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.21", features = ["extension-module"] }
-ort = { version = "2.0.0-rc.9", features = ["cuda"] }
+ort = "2.0.0-rc.9"
 numpy = "0.21"
 image = "0.25"
 imageproc = "0.25"
