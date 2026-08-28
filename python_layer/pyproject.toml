@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.5"]
+build-backend = "maturin"
+
+[project]
+name = "adas_pilot"
+version = "0.2.0"
+description = "Hybrid ADAS Perception Engine with Rust ONNX Core"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python-headless>=4.8",
+    "numpy>=1.24",
+    "pyttsx3>=2.90",
+]
+
+[project.optional-dependencies]
+vlm = [
+    "transformers>=4.40",
+    "torch>=2.1",
+    "Pillow>=10.0",
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "adas_pilot"
+python-source = "."
+features = []
