@@ -8,23 +8,24 @@ import numpy as np
 try:
     import adas_hybrid
 except ImportError:
-    sys.exit("Error: 'adas_hybrid' pyo3 module not found")
+    sys.exit("Error: 'adas_hybrid' pyo3 module not found. Run: cd rust_core && maturin develop --release")
 
 from app.audio_alert import AudioAlertEngine
 from app.display import HudRenderer
 from app.fusion import PerceptionFusion
 from app.scene_analyzer import SceneAnalyzer
 
+
 class AdasPipeline:
     def __init__(self, args):
         vehicle_model = args.vehicle_model or "models/yolo11n.onnx"
-        sign_model = args.sign_model or "models/traffic_Signs.onnx"
+        sign_model = args.sign_model or "models/traffic_signs.onnx"
         lane_model = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else None
         light_det = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
         light_cls = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
 
         self.brain = adas_hybrid.AdasBrain(
-            vehicle_model = vehicle_model,
+            vehicle_model=vehicle_model,
             sign_model=sign_model,
             lane_model=lane_model,
             light_det_model=light_det,
@@ -38,16 +39,13 @@ class AdasPipeline:
         self.display = HudRenderer()
         self.audio = AudioAlertEngine(enabled=not args.no_audio)
 
-
         self.vlm = None
         if args.enable_vlm:
             from app.vlm_engine import VLMEngine
             self.vlm = VLMEngine()
 
-
-
     def run(self, source):
-        video_src = int(source) if srt(source).is_digit() else source
+        video_src = int(source) if str(source).isdigit() else source
         cap = cv2.VideoCapture(video_src)
 
         if not cap.isOpened():
@@ -65,17 +63,19 @@ class AdasPipeline:
 
                 h, w = frame.shape[:2]
                 now = time.perf_counter()
-                dt = max(now - pev_time, 1e-4)
+                dt = max(now - prev_time, 1e-4)
                 prev_time = now
 
                 frame_bytes = frame.tobytes()
                 frame_np = np.ascontiguousarray(frame)
 
+                # ---- Tier 1: Rust ONNX Core ----
                 vehicles = self.brain.detect_vehicles(frame_bytes, w, h, 0.35)
                 lanes = self.brain.detect_lanes_nn(frame_np)
                 lights = self.brain.detect_traffic_lights(frame_bytes, w, h)
-                signs = self.brain.detet_signs(frame_bytes, w, h, 0.30)
+                signs = self.brain.detect_signs(frame_bytes, w, h, 0.30)
 
+                # Convert vehicle dicts → tracker input tuples (x, y, w, h, label)
                 det_tuples = []
                 for v in vehicles:
                     bx = v["bbox"]
@@ -91,36 +91,42 @@ class AdasPipeline:
 
                 tier1_results = {
                     "vehicles": vehicles,
-                    "tracled": tracked,
+                    "tracked": tracked,
                     "lanes": lanes,
                     "lights": lights,
                     "signs": signs,
                     "departure": departure,
                 }
 
-                context = self.scene_Analyzer.analyze(tier1_results, frame)
+                # ---- Tier 2: Python Intelligence ----
+                context = self.scene_analyzer.analyze(tier1_results, frame)
                 advisory = self.fusion.generate_advisory(tier1_results, context)
 
+                # Optional VLM (dev-only, async, every Nth frame)
                 vlm_text = None
                 if self.vlm:
                     if frame_idx % 15 == 0:
                         self.vlm.submit_frame(frame)
-                    vlm_text = self.vlm.get_lates_response()
+                    vlm_text = self.vlm.get_latest_response()
 
-                    fps = 1.0 / dt
-                    hud_frame = self.display.render(
-                        frame, tier1_results, context, advisory, fps, vlm_text
-                    )
-                    self.audio.process(advisory, context)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
-                    frame_idx += 1
+                # ---- Output ----
+                fps = 1.0 / dt
+                hud_frame = self.display.render(
+                    frame, tier1_results, context, advisory, fps, vlm_text
+                )
+                self.audio.process(advisory, context)
+
+                cv2.imshow("ADAS Hybrid", hud_frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+                frame_idx += 1
         finally:
             cap.release()
             cv2.destroyAllWindows()
             self.audio.stop()
             if self.vlm:
                 self.vlm.stop()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Real-Time Hybrid ADAS Perception Engine")
@@ -137,6 +143,7 @@ def main():
     args = parser.parse_args()
     pipeline = AdasPipeline(args)
     pipeline.run(args.video)
+
 
 if __name__ == "__main__":
     main()

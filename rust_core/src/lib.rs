@@ -425,7 +425,7 @@ pub fn check_traffic_lights(frame: PyReadonlyArray3<u8>) -> PyResult<String> {
 }
 
 #[pymodule]
-fn adas_pilot(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn adas_hybrid(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_lanes, m)?)?;
     m.add_function(wrap_pyfunction!(check_traffic_lights, m)?)?;
 

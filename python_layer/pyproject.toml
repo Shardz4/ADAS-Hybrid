@@ -3,7 +3,7 @@ requires = ["maturin>=1.5"]
 build-backend = "maturin"
 
 [project]
-name = "adas_pilot"
+name = "adas-hybrid"
 version = "0.2.0"
 description = "Hybrid ADAS Perception Engine with Rust ONNX Core"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ dev = [
 ]
 
 [tool.maturin]
-manifest-path = "Cargo.toml"
-module-name = "adas_pilot"
+manifest-path = "../rust_core/Cargo.toml"
+module-name = "adas_hybrid"
 python-source = "."
 features = []

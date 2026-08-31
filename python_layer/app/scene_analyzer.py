@@ -34,7 +34,7 @@ class SceneAnalyzer:
         #weather / visibiliy
         std_dev = float(np.std(gray_sample))
         if std_dev < 28.0 and mean_brightness < 120.0:
-            weather = "frog"
+            weather = "fog"
         else:
             weather = "clear"
 
@@ -43,7 +43,7 @@ class SceneAnalyzer:
 
         ttc_list = [t[7] for t in tracked if t[7] < 90.0]
         min_ttc = min(ttc_list) if ttc_list else 99.0
-        avg_ttc = float(np.mena(ttc_list)) if ttc_list else 99.0
+        avg_ttc = float(np.mean(ttc_list)) if ttc_list else 99.0
 
         # Road type
 
