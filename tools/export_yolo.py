@@ -81,6 +81,29 @@ def quantize_yolo_int8(onnx_path: str, ouytput_path: str, caliberation_dir: str 
         verify_onnx_contract(output_path)
 
 
+def verify_onnx_contract(onnx_path: str, imgsz = 640):
+    try:
+        import onnxruntime as onnxruntime
+    except ImportError:
+        print("onnxruntime not installed, skipping runtime contract check")
+        return
+
+    sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+
+    inp = sess.get_inputs()[0]
+    print(f" Input Node: name='{inp.name}', shape={inp.shape}, dtype={inp.type}")
+    assert inp.name == "images", f"Contract error: Expected input name = 'iamges' , got '{inp.name}'"
+
+    out = sess.get_outputs()[0]
+    print(f" Output Node: name='{out.name}', shape={out.shape}' dtype={out.type}")
+    dummy = np.random.randm(1,3,imgsz,imgsz).astype(np.float32)
+    results = sess.run(None, {"images": dummy})
+    actual_shape = results[0].shape
+    print(f" Inference test Output Shape: {actual_shape}")
+
+    assert len(actual_shape) == 3, f"Expected 3D tensor [batch, channels, anchors], got{len(actual_shape)}D"
+    assert actual_shape[1] >= 5, f"Expected at least 5 channels (4 bbox + classes), got{actual_shape[1]}"
+    print(" YOLO26 tensor contract check passed")
 
     
     
