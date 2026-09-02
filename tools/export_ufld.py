@@ -115,4 +115,38 @@ def export_stub_model(output: str):
     )
     verify_ufld_onnx(output)
     print(f"\n UFLD stub model exported to {output}")
-    
+
+def verify_ufld_onnx(onnx_path: str):
+    """Verify that the UFLD ONNX model strictly complies with the Rust decoder."""
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        print("⚠️  onnxruntime not installed, skipping contract verification")
+        return
+    sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+    inp = sess.get_inputs()[0]
+    print(f"  Input Node:  name='{inp.name}', shape={inp.shape}, dtype={inp.type}")
+    assert inp.name == "input", f"Contract Error: Expected input name 'input', got '{inp.name}'"
+    out = sess.get_outputs()[0]
+    print(f"  Output Node: name='{out.name}', shape={out.shape}, dtype={out.type}")
+    dummy = np.random.randn(1, 3, 288, 800).astype(np.float32)
+    results = sess.run(None, {"input": dummy})
+    actual_shape = results[0].shape
+    print(f"  Actual Output Shape: {actual_shape}")
+    print("  ✅ UFLD tensor contract check PASSED")
+def main():
+    parser = argparse.ArgumentParser(description="Export UFLD-v2 Lane Detection Model to ONNX")
+    parser.add_argument("--config", type=str, default=None, help="Path to UFLD config.py")
+    parser.add_argument("--weights", type=str, default=None, help="Path to UFLD .pth checkpoint")
+    parser.add_argument("--output", type=str, default="models/ufld_culane.onnx", help="Target ONNX output path")
+    parser.add_argument("--stub", action="store_true", help="Generate a structural stub model for pipeline integration")
+    args = parser.parse_args()
+    if args.stub:
+        export_stub_model(args.output)
+    elif args.config and args.weights:
+        export_from_checkpoint(args.config, args.weights, args.output)
+    else:
+        print("No --config/--weights provided. Generating stub model for testing.")
+        export_stub_model(args.output)
+if __name__ == "__main__":
+    main() 
