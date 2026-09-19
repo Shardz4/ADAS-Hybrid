@@ -80,6 +80,36 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
                 lf.write(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
                 count += 1
     print(f"  Converted {count} bounding boxes from {len(image_labels)} images.")
-    return coun
+    return count
+
+def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt"):
+    """Fine-tune the YOLO26-Nano detector on traffic light fixtures."""
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        sys.exit("Error: ultralytics package required: pip install ultralytics")
+    print(f"\n[TRAIN] Training YOLO26 Traffic Light Detector")
+    print(f"  Base Model:  {base_model}")
+    print(f"  Dataset:     {data_yaml}")
+    print(f"  Resolution:  {imgsz}×{imgsz}")
+    print(f"  Epochs:      {epochs}")
+    print(f"  Batch:       {batch}\n")
+    model = YOLO(base_model)
+    model.train(
+        data=data_yaml,
+        epochs=epochs,
+        imgsz=imgsz,
+        batch=batch,
+        name="light_detector_yolo26",
+        project="runs/light_det",
+        exist_ok=True,
+        verbose=True,
+    )
+    best_path = os.path.join("runs", "light_det", "light_detector_yolo26", "weights", "best.pt")
+    if os.path.exists(best_path):
+        print(f"\n Training complete. Best checkpoint: {best_path}")
+        return best_path
+    return None
+
 
 
