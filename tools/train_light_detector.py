@@ -111,5 +111,51 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
         return best_path
     return None
 
+def export_to_onnx(weights_path: str, output: str, imgsz: int = 320):
+    """Export the trained fixture detector to ONNX format."""
+    from ultralytics import YOLO
+    print(f"\n[EXPORT] Converting {weights_path} → {output} (imgsz={imgsz})...")
+    model = YOLO(weights_path)
+    export_path = model.export(format="onnx", imgsz=imgsz, opset=17, simplify=True)
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+    if os.path.abspath(export_path) != os.path.abspath(output):
+        if os.path.exists(output):
+            os.remove(output)
+        os.replace(export_path, output)
+    try:
+        import onnxruntime as ort
+        sess = ort.InferenceSession(output, providers=["CPUExecutionProvider"])
+        inp = sess.get_inputs()[0]
+        dummy = np.random.randn(1, 3, imgsz, imgsz).astype(np.float32)
+        out = sess.run(None, {inp.name: dummy})
+        print(f" Verification: Input '{inp.name}' {inp.shape} → Output {out[0].shape}")
+        print(f" YOLO26 fixture detector ONNX ready: {output}")
+    except Exception as e:
+        print(f"Verification warning: {e}")
+def main():
+    parser = argparse.ArgumentParser(description="Train and Export YOLO26 Traffic Light Fixture Detector")
+    parser.add_argument("--base-model", type=str, default="yolo26n.pt",
+                        help="Base YOLO26 model checkpoint (default: yolo26n.pt)")
+    parser.add_argument("--data", type=str, default=None, help="Path to dataset.yaml")
+    parser.add_argument("--lisa-dir", type=str, default=None, help="Path to raw LISA dataset folder")
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--imgsz", type=int, default=320)
+    parser.add_argument("--export", action="store_true", help="Auto-export to ONNX upon completion")
+    parser.add_argument("--output", type=str, default="models/light_det.onnx")
+    args = parser.parse_args()
+    if args.lisa_dir:
+        yolo_dir = os.path.join("datasets", "lisa_yolo")
+        convert_lisa_to_yolo(args.lisa_dir, yolo_dir)
+        args.data = create_dataset_yaml(yolo_dir, os.path.join(yolo_dir, "dataset.yaml"))
+    if not args.data:
+        sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
+    best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model)
+    if args.export and best_ckpt:
+        export_to_onnx(best_ckpt, args.output, args.imgsz)
+if __name__ == "__main__":
+    main()
+
+
 
 
