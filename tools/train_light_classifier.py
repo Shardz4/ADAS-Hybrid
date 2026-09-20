@@ -156,3 +156,27 @@ def export_to_onnx(weights_patj: str, output: str, device: str = "cpu"):
         print(f"Classifier ONNX ready: {output}")
     except Exception as e:
         print(f"Verification warning: {e}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train Traffic Light State Classifier")
+    parser.add_argument("--data", type=str, required=True, help="Path to cropped dataset folder")
+    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--export", action="store_true", help="Auto-export ONNX on completion")
+    parser.add_argument("--output", type=str, default="models/light_cls.onnx")
+    args = parser.parse_args()
+    device = "cuda" if has_cuda() else "cpu"
+    best_ckpt = train(args.data, args.epochs, args.batch_size, args.lr, device)
+    if args.export and best_ckpt:
+        export_to_onnx(best_ckpt, args.output, device)
+def has_cuda():
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+if __name__ == "__main__":
+    main()
+
