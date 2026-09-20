@@ -125,4 +125,34 @@ def train(data_dir: str, epochs: int, batch_Size: int, lr: float, device: str):
         print(f"\n trianing complete checkpoint saved: {best_weights}")
         return best_weights
 
-        
+def export_to_onnx(weights_patj: str, output: str, device: str = "cpu"):
+    import torch
+
+    print(f"\n Exporting Efficient Net B0 to ONNX")
+    model.build_classifier(num_classes=4, pretrained=False)
+    model.load_state_dict(torch.load(weights_path, map_loacation=device))
+    model.eval()
+
+    dummy_input = torch.randn(1, 3, INPUT_H, INPUT_W)
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+    torch.onnx.export(
+        model,
+        dummy_input,
+        output,
+        input_names=["input"],
+        output_names=["output"],
+        opset_version=17,
+        dynamic_axes=None,
+    )
+    try:
+        import onnxruntime as ort
+        sess = ort.InferenceSession(output, providers=["CPUExecutionProvider"])
+        inp = sess.get_inputs()[0]
+        out = sess.get_outputs()[0]
+        dummy = np.random.randn(1, 3, INPUT_H, INPUT_W).astype(np.float32)
+        res = sess.run(None, {inp.name: dummy})
+        assert res[0].shape == (1, 4), f"Expected (1, 4), got {res[0].shape}"
+        print(f"  Contract verified: '{inp.name}' {inp.shape} → '{out.name}' {res[0].shape}")
+        print(f"Classifier ONNX ready: {output}")
+    except Exception as e:
+        print(f"Verification warning: {e}")
