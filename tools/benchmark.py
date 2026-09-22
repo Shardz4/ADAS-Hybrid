@@ -174,5 +174,54 @@ def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:
     if peak_vram > 0:
         print(f"  Peak VRAM Consumption:          {peak_vram:6.0f} MB")
     print("=" * 75 + "\n")
-    
+
     return all_metrics, peak_vram
+
+
+def save_csv_report(metrics, peak_vram: float, csv_path: str):
+    """Save benchmark results to CSV."""
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["component", "mean_ms", "std_ms", "p95_ms", "min_ms", "max_ms"])
+        for m in metrics:
+            writer.writerow([m.name, f"{m.mean:.3f}", f"{m.std:.3f}", f"{m.p95:.3f}", f"{m.min_val:.3f}", f"{m.max_val:.3f}"])
+        writer.writerow(["peak_vram_mb", f"{peak_vram:.1f}", "", "", "", ""])
+    print(f"CSV benchmark report saved: {csv_path}")
+
+
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description="ADAS Hybrid Perception Benchmark (YOLO26)")
+    parser.add_argument("--video", type=str, required=True, help="Video source path or webcam ID")
+    parser.add_argument("--vehicle-model", type=str, default="models/yolo26n.onnx", help="Path to YOLO26 ONNX model")
+    parser.add_argument("--sign-model", type=str, default="models/traffic_signs.onnx")
+    parser.add_argument("--lane-model", type=str, default=None)
+    parser.add_argument("--light-det-model", type=str, default=None)
+    parser.add_argument("--light-cls-model", type=str, default=None)
+    parser.add_argument("--iterations", type=int, default=100)
+    parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--output", type=str, default=None, help="Save metrics to CSV")
+    args = parser.parse_args()
+
+    lane_m = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else None
+    ldet_m = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
+    lcls_m = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
+    
+    metrics, vram = run_benchmark(
+        video_source=args.video,
+        vehicle_model=args.vehicle_model,
+        sign_model=args.sign_model,
+        lane_model=lane_m,
+        light_det_model=ldet_m,
+        light_cls_model=lcls_m,
+        iterations=args.iterations,
+        warmup=args.warmup,
+    )
+
+    if args.output:
+        save_csv_report(metrics, vram, args.output)
+        
+if __name__ == "__main__":
+    main()
