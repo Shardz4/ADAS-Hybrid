@@ -84,7 +84,7 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
     print(f"  Converted {count} bounding boxes from {len(image_labels)} images.")
     return count
 
-def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt"):
+def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt", patience: int = 10, resume: bool = False):
     """Fine-tune the YOLO26-Nano detector on traffic light fixtures."""
     try:
         from ultralytics import YOLO
@@ -95,13 +95,19 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
     print(f"  Dataset:     {data_yaml}")
     print(f"  Resolution:  {imgsz}x{imgsz}")
     print(f"  Epochs:      {epochs}")
-    print(f"  Batch:       {batch}\n")
+    print(f"  Batch:       {batch}")
+    print(f"  Patience:    {patience} (early stopping)")
+    print(f"  Resume:      {resume}\n")
     model = YOLO(base_model)
     model.train(
         data=data_yaml,
         epochs=epochs,
         imgsz=imgsz,
         batch=batch,
+        patience=patience,
+        resume=resume,
+        save=True,
+        save_period=1,
         name="light_detector_yolo26",
         project="runs/light_det",
         exist_ok=True,
@@ -144,6 +150,8 @@ def main():
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--imgsz", type=int, default=320)
+    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience (epochs without improvement)")
+    parser.add_argument("--resume", action="store_true", help="Resume training from last checkpoint after crash")
     parser.add_argument("--export", action="store_true", help="Auto-export to ONNX upon completion")
     parser.add_argument("--output", type=str, default="models/light_det.onnx")
     args = parser.parse_args()
@@ -153,7 +161,7 @@ def main():
         args.data = create_dataset_yaml(yolo_dir, os.path.join(yolo_dir, "dataset.yaml"))
     if not args.data:
         sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
-    best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model)
+    best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume)
     if args.export and best_ckpt:
         export_to_onnx(best_ckpt, args.output, args.imgsz)
 

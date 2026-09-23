@@ -63,12 +63,14 @@ def get_dataloaders(data_dir: str, batch_size: int = 32):
     return train_loader, val_loader
 
 
-def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str):
+def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str, patience: int = 10, resume: str = None):
     import torch
     import torch.nn as nn
 
     print(f"State Classifier")
     print(f"Data dir : {data_dir} | Resolution: {INPUT_H}x{INPUT_W} | Epochs: {epochs} | device: {device}")
+    print(f"Patience : {patience} (early stopping)")
+
     model = build_classifier(num_classes=4, pretrained=True).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -76,10 +78,25 @@ def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str):
 
     train_loader, val_loader = get_dataloaders(data_dir, batch_size=batch_size)
     best_acc = 0.0
-    best_weights = os.path.join("runs", "light_cls", "best.pt")
-    os.makedirs(os.path.dirname(best_weights), exist_ok=True)
+    start_epoch = 0
+    no_improve_count = 0
+    run_dir = os.path.join("runs", "light_cls")
+    best_weights = os.path.join(run_dir, "best.pt")
+    last_checkpoint = os.path.join(run_dir, "last_checkpoint.pt")
+    os.makedirs(run_dir, exist_ok=True)
 
-    for epoch in range(epochs):
+    if resume and os.path.exists(resume):
+        print(f"  Resuming from checkpoint: {resume}")
+        ckpt = torch.load(resume, map_location=device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        start_epoch = ckpt["epoch"] + 1
+        best_acc = ckpt.get("best_acc", 0.0)
+        no_improve_count = ckpt.get("no_improve_count", 0)
+        print(f"  Resumed at epoch {start_epoch}, best_acc={best_acc:.1f}%")
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         total_loss, correct, total = 0.0, 0, 0
 
@@ -98,6 +115,7 @@ def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str):
 
         train_acc = (correct / total) * 100
         val_acc = 0.0
+        improved = False
 
         if val_loader:
             model.eval()
@@ -113,13 +131,33 @@ def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str):
 
             if val_acc > best_acc:
                 best_acc = val_acc
+                improved = True
+                no_improve_count = 0
                 torch.save(model.state_dict(), best_weights)
+            else:
+                no_improve_count += 1
 
         scheduler.step()
-        print(f"Epoch {epoch+1:2d}/{epochs} | Loss: {total_loss/total:.4f} | "
-              f"Train Acc: {train_acc:.1f}% | Val Acc: {val_acc:.1f}% (Best: {best_acc:.1f}%)")
 
-    print(f"\n Training complete. Checkpoint saved: {best_weights}")
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_acc": best_acc,
+            "no_improve_count": no_improve_count,
+        }, last_checkpoint)
+
+        marker = "*" if improved else ""
+        print(f"Epoch {epoch+1:2d}/{epochs} | Loss: {total_loss/total:.4f} | "
+              f"Train Acc: {train_acc:.1f}% | Val Acc: {val_acc:.1f}% (Best: {best_acc:.1f}%) {marker}")
+
+        if val_loader and no_improve_count >= patience:
+            print(f"\n  Early stopping triggered: no improvement for {patience} epochs")
+            break
+
+    print(f"\n Training complete. Best checkpoint: {best_weights}")
+    print(f"  Last full checkpoint: {last_checkpoint}")
     return best_weights
 
 def export_to_onnx(weights_path: str, output: str, device: str = "cpu"):
@@ -161,11 +199,13 @@ def main():
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience (epochs without improvement)")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from (e.g. runs/light_cls/last_checkpoint.pt)")
     parser.add_argument("--export", action="store_true", help="Auto-export ONNX on completion")
     parser.add_argument("--output", type=str, default="models/light_cls.onnx")
     args = parser.parse_args()
     device = "cuda" if has_cuda() else "cpu"
-    best_ckpt = train(args.data, args.epochs, args.batch_size, args.lr, device)
+    best_ckpt = train(args.data, args.epochs, args.batch_size, args.lr, device, args.patience, args.resume)
     if args.export and best_ckpt:
         export_to_onnx(best_ckpt, args.output, device)
 
