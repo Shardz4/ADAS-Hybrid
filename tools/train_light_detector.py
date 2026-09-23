@@ -26,24 +26,25 @@ names:
 def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
     images_dir = Path(output_dir) / "images" / "train"
     labels_dir = Path(output_dir) / "labels" / "train"
-    images_dir,mkdir(parents=True, exist_ok=True)
-    labels_dir.mkdir(parents=True, exist_ok-True)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = [
-        os.path.join(lisa_dir, "Annotations", "Annotations,csv"),
+        os.path.join(lisa_dir, "Annotations", "Annotations.csv"),
         os.path.join(lisa_dir, "frameAnnotationsBOX.csv"),
         os.path.join(lisa_dir, "allAnnotations.csv"),
     ]
     annotations_file = next((c for c in candidates if os.path.exists(c)), None)
 
     if not annotations_file:
-        print(f" No Annotations file found")
-        return 
-    count = 0
-    images_labels = {}
+        print(f" No annotation file found in {lisa_dir}")
+        return 0
 
-    with opne(annotations_file, "r") as f:
-        reader = csv.reader(f, delimiter;";")
+    count = 0
+    image_labels = {}
+
+    with open(annotations_file, "r") as f:
+        reader = csv.reader(f, delimiter=";")
         next(reader, None)
 
         for row in reader:
@@ -61,6 +62,7 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
             if basename not in image_labels:
                 image_labels[basename] = {"src": img_full, "boxes": []}
             image_labels[basename]["boxes"].append((x1, y1, x2, y2))
+
     import cv2
     for basename, info in image_labels.items():
         dst_img = images_dir / basename
@@ -91,7 +93,7 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
     print(f"\n[TRAIN] Training YOLO26 Traffic Light Detector")
     print(f"  Base Model:  {base_model}")
     print(f"  Dataset:     {data_yaml}")
-    print(f"  Resolution:  {imgsz}×{imgsz}")
+    print(f"  Resolution:  {imgsz}x{imgsz}")
     print(f"  Epochs:      {epochs}")
     print(f"  Batch:       {batch}\n")
     model = YOLO(base_model)
@@ -114,7 +116,7 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
 def export_to_onnx(weights_path: str, output: str, imgsz: int = 320):
     """Export the trained fixture detector to ONNX format."""
     from ultralytics import YOLO
-    print(f"\n[EXPORT] Converting {weights_path} → {output} (imgsz={imgsz})...")
+    print(f"\n[EXPORT] Converting {weights_path} -> {output} (imgsz={imgsz})...")
     model = YOLO(weights_path)
     export_path = model.export(format="onnx", imgsz=imgsz, opset=17, simplify=True)
     os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
@@ -128,10 +130,11 @@ def export_to_onnx(weights_path: str, output: str, imgsz: int = 320):
         inp = sess.get_inputs()[0]
         dummy = np.random.randn(1, 3, imgsz, imgsz).astype(np.float32)
         out = sess.run(None, {inp.name: dummy})
-        print(f" Verification: Input '{inp.name}' {inp.shape} → Output {out[0].shape}")
+        print(f" Verification: Input '{inp.name}' {inp.shape} -> Output {out[0].shape}")
         print(f" YOLO26 fixture detector ONNX ready: {output}")
     except Exception as e:
         print(f"Verification warning: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Train and Export YOLO26 Traffic Light Fixture Detector")
     parser.add_argument("--base-model", type=str, default="yolo26n.pt",
@@ -153,9 +156,6 @@ def main():
     best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model)
     if args.export and best_ckpt:
         export_to_onnx(best_ckpt, args.output, args.imgsz)
+
 if __name__ == "__main__":
     main()
-
-
-
-
