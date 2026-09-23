@@ -12,7 +12,7 @@ import numpy as np
 try:
     import adas_hybrid
 except ImportError:
-    sys.exit("Error: 'adas_hybrid' not found")
+    sys.exit("Error: 'adas_hybrid' not found. Build with: cd python_layer && maturin develop --release")
 
 def get_vram_mb():
     try:
@@ -23,44 +23,45 @@ def get_vram_mb():
         )
         return float(res.stdout.strip().split("\n")[0])
     except Exception:
-        return 0.0
+        return -1.0
 
 class MetricTracker:
-    def __init__(self, name:str):
+    def __init__(self, name: str):
         self.name = name
         self.samples = []
+
     def add(self, ms: float):
         self.samples.append(ms)
-    
+
     @property
     def mean(self):
         return float(np.mean(self.samples)) if self.samples else 0.0
-    
+
     @property
     def std(self):
-        return float(np.std(Self.samples)) if self.samples else 0.0
-    
+        return float(np.std(self.samples)) if self.samples else 0.0
+
     @property
     def p95(self):
         return float(np.percentile(self.samples, 95)) if self.samples else 0.0
-    
+
     @property
     def min_val(self):
         return float(np.min(self.samples)) if self.samples else 0.0
-    
+
     @property
     def max_val(self):
         return float(np.max(self.samples)) if self.samples else 0.0
 
-def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:str = None, light_det_model: str = None, light_cls_model: str = None, iterations: int = 100, warmup: int = 10):
+def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model: str = None, light_det_model: str = None, light_cls_model: str = None, iterations: int = 100, warmup: int = 10):
     import cv2
-    print(f"[1/3] Initializing Perception Model (Vechicle = {vehicle_model})")
-    t0 = timer.perf_counter()
+    print(f"[1/3] Initializing Perception Model (Vehicle = {vehicle_model})")
+    t0 = time.perf_counter()
     brain = adas_hybrid.AdasBrain(vehicle_model=vehicle_model, sign_model=sign_model, lane_model=lane_model, light_det_model=light_det_model, light_cls_model=light_cls_model)
 
     tracker = adas_hybrid.Tracker()
     lane_mgr = adas_hybrid.LaneManager(smoothing=0.7, is_two_way=False)
-    load_time - (time.perf_counter - t0) * 1000
+    load_time = (time.perf_counter() - t0) * 1000
     print(f"Initialized in {load_time:.1f} ms")
 
     vram_init = get_vram_mb()
@@ -84,15 +85,15 @@ def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:
         if not ret:
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             ret, frame = cap.read()
-        
-        h,w = frame.shape[:2]
+
+        h, w = frame.shape[:2]
         fb = frame.tobytes()
         fn = np.ascontiguousarray(frame)
         brain.detect_vehicles(fb, w, h, 0.35)
         brain.detect_lanes_nn(fn)
         brain.detect_traffic_lights(fb, w, h)
         brain.detect_signs(fb, w, h, 0.30)
-    
+
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     prev_time = time.perf_counter()
     peak_vram = vram_init
@@ -102,23 +103,19 @@ def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:
     for i in range(iterations):
         ret, frame = cap.read()
         if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES,0)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             ret, frame = cap.read()
-        
-        h,w = frame.shape[:2]
+
+        h, w = frame.shape[:2]
         frame_bytes = frame.tobytes()
-        frame_np = np.contiguousarray(Frame)
+        frame_np = np.ascontiguousarray(frame)
 
-        frame_Start = time.perf_counter()
+        frame_start = time.perf_counter()
 
-        t = time.perf_counter()
-        vehicles = brain.detect_vehicles(frame_bytes, w, h, 0.35)
-        m_veh.add((time.perf_counter()-t) * 1000)
-        
         # Vehicle Detection (YOLO26)
         t = time.perf_counter()
-        vehivles =brain.detect_vehicles(frame_bytes, w, h, 0.35)
-        m_veh((time.perf_counter90 - t) * 1000)
+        vehicles = brain.detect_vehicles(frame_bytes, w, h, 0.35)
+        m_veh.add((time.perf_counter() - t) * 1000)
 
         # Lane Detection
         t = time.perf_counter()
@@ -146,6 +143,7 @@ def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:
             tuples.append((float(bx[0]), float(bx[1]), float(bx[2]-bx[0]), float(bx[3]-bx[1]), v["label"]))
         tracked = tracker.process_frame(tuples, dt)
         m_track.add((time.perf_counter() - t) * 1000)
+
         total_frame_ms = (time.perf_counter() - frame_start) * 1000
         m_total.add(total_frame_ms)
         if i % 25 == 0:
@@ -156,8 +154,6 @@ def run_benchmark(video_source, vehicle_model: str, sign_model: str, lane_model:
             print(f"  Frame {i+1:3d}/{iterations} | Pipeline: {m_total.mean:5.2f}ms | "
                   f"Throughput: {cur_fps:4.1f} FPS | Detected Vehicles: {len(vehicles)}")
     cap.release()
-
-
 
     print("\n" + "=" * 75)
     print("  BENCHMARK SUMMARY RESULTS (YOLO26)")
@@ -189,9 +185,6 @@ def save_csv_report(metrics, peak_vram: float, csv_path: str):
     print(f"CSV benchmark report saved: {csv_path}")
 
 
-
-
-
 def main():
     parser = argparse.ArgumentParser(description="ADAS Hybrid Perception Benchmark (YOLO26)")
     parser.add_argument("--video", type=str, required=True, help="Video source path or webcam ID")
@@ -208,7 +201,7 @@ def main():
     lane_m = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else None
     ldet_m = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
     lcls_m = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
-    
+
     metrics, vram = run_benchmark(
         video_source=args.video,
         vehicle_model=args.vehicle_model,
@@ -222,6 +215,6 @@ def main():
 
     if args.output:
         save_csv_report(metrics, vram, args.output)
-        
+
 if __name__ == "__main__":
     main()

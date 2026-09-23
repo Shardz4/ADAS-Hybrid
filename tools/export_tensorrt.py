@@ -7,13 +7,13 @@ import numpy as np
 def check_tensorrt():
     try:
         import tensorrt as trt
-        print(f" TensorRT version: {trt.__Version__}")
+        print(f"  TensorRT version: {trt.__version__}")
         return trt
     except ImportError:
         sys.exit(
-            "Error: TensorRT package is not available in this Python environment. \n"
-            "On Jetson Orin Nano, TensorRT is installed via JetPack. \n"
-            "On Desktop Linux/Windows, install TensorRT matdhin your CUDA toolkit"
+            "Error: TensorRT package is not available in this Python environment.\n"
+            "On Jetson Orin Nano, TensorRT is installed via JetPack.\n"
+            "On Desktop Linux/Windows, install TensorRT matching your CUDA toolkit."
         )
 
 def build_engine(
@@ -27,9 +27,8 @@ def build_engine(
     trt = check_tensorrt()
     logger = trt.Logger(trt.Logger.INFO)
 
-    print(f"\n[TRT BUILd] {onnx_path}->{output_path}")
-    print(F"Precision: FP16={fp16}, INT8={int8} DLA={dla_core}")
-    print(F"max_workspace_gb: {max_workspace_gb}")
+    print(f"\n[TRT BUILD] {onnx_path} -> {output_path}")
+    print(f"  Precision: FP16={fp16}, INT8={int8} | DLA core: {dla_core} | Workspace: {max_workspace_gb}GB")
 
     builder = trt.Builder(logger)
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
@@ -55,7 +54,7 @@ def build_engine(
             config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
             print(f"  Targeting Deep Learning Accelerator (DLA) Core {dla_core}")
         else:
-            print("  ⚠️  DLA requested but no DLA hardware detected, falling back to GPU")
+            print("  DLA requested but no DLA hardware detected, falling back to GPU")
     print("  [2/4] Optimizing computation graph (this may take a few minutes)...")
     start = time.perf_counter()
     plan = builder.build_serialized_network(network, config)
@@ -67,19 +66,19 @@ def build_engine(
     with open(output_path, "wb") as f:
         f.write(plan)
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    print(f"  [4/4]Engine generated: {output_path} ({size_mb:.1f} MB in {duration:.1f}s)")
+    print(f"  [4/4] Engine generated: {output_path} ({size_mb:.1f} MB in {duration:.1f}s)")
 
-def build_all(model_dir: str, fp16: bool, int7: bool, dla_core:int):
+def build_all(model_dir: str, fp16: bool, int8: bool, dla_core: int):
     files = [f for f in os.listdir(model_dir) if f.endswith(".onnx")]
     if not files:
-        print(f"No .onnx fiels found in {,odel_dir}")
+        print(f"No .onnx files found in {model_dir}")
         return
 
     print(f"Found {len(files)} models to convert in {model_dir}:")
-    for f in files: 
+    for f in files:
         src = os.path.join(model_dir, f)
         dst = src.replace(".onnx", ".engine")
-        build_engine(src, dst, fp16, int8, dla_core)
+        build_engine(src, dst, fp16=fp16, int8=int8, dla_core=dla_core)
 
 def main():
     parser = argparse.ArgumentParser(description="Compile YOLO26/ONNX to TensorRT Engine")
@@ -99,6 +98,6 @@ def main():
         build_engine(args.onnx, out, fp16=args.fp16, int8=args.int8, dla_core=args.dla, max_workspace_gb=args.workspace)
     else:
         parser.print_help()
+
 if __name__ == "__main__":
     main()
-
