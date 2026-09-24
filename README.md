@@ -6,45 +6,45 @@ The architecture separates latency-critical perception (Tier 1 in pure Rust + ON
 
 ---
 
-## 🏛️ System Architecture
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                   TIER 1 — Rust ONNX Core (Every Frame)                 │
 │                   Target: <10ms on RTX 3050 Ti, <20ms on Orin           │
 │                                                                         │
-│   ⚡ Lane Detection    → UFLD-v2 Row-Anchor ONNX + Hough Fallback        │
-│   ⚡ Vehicle Detection → YOLO11n ONNX (PyO3 Zero-Copy Tensor Pipeline)   │
-│   ⚡ Object Tracking   → 2D Kalman Filter + Centroid (Pure Rust CPU)    │
-│   ⚡ Light Detection   → YOLO-Nano Fixture Detector ONNX                 │
-│   ⚡ Light Classify    → EfficientNet-B0 ONNX Crop Classifier            │
-│   ⚡ Light Verify      → 5-Frame Temporal Majority Voter (Zero Cost)     │
-│   ⚡ Sign Recognition  → Custom 4-Class ONNX (Stop, Yield, Speed, etc.)  │
-│   ⚡ Lane Management   → Polyline Smoothing + Ego-Lane Drift / Departure │
+│   Lane Detection    → UFLD-v2 Row-Anchor ONNX + Hough Fallback        │
+│   Vehicle Detection → YOLO11n ONNX (PyO3 Zero-Copy Tensor Pipeline)   │
+│   Object Tracking   → 2D Kalman Filter + Centroid (Pure Rust CPU)    │
+│   Light Detection   → YOLO-Nano Fixture Detector ONNX                 │
+│   Light Classify    → EfficientNet-B0 ONNX Crop Classifier            │
+│   Light Verify      → 5-Frame Temporal Majority Voter (Zero Cost)     │
+│   Sign Recognition  → Custom 4-Class ONNX (Stop, Yield, Speed, etc.)  │
+│   Lane Management   → Polyline Smoothing + Ego-Lane Drift / Departure │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼ PyO3 Bindings
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                   TIER 2 — Python Intelligence Layer                    │
 │                                                                         │
-│   🧠 Scene Context     → Rule-based heuristics (weather / road density)  │
-│   🧠 Driving Advisory  → Time-to-Collision (TTC) & Threat Escalation    │
-│   🧠 [DEV-ONLY] VLM    → SmolVLM-500M (INT4) for A/B quality benchmarking│
-│   🔀 Sensor Fusion     → Tier 1 conflict resolution & safe overrides     │
+│   Scene Context     → Rule-based heuristics (weather / road density)  │
+│   Driving Advisory  → Time-to-Collision (TTC) & Threat Escalation    │
+│   [DEV-ONLY] VLM    → SmolVLM-500M (INT4) for A/B quality benchmarking│
+│   Sensor Fusion     → Tier 1 conflict resolution & safe overrides     │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          OUTPUT & INTERFACES                            │
 │                                                                         │
-│   🖥️ Visual HUD        → Real-time OpenCV telemetry overlay             │
-│   🔊 Audio Alerts      → Non-blocking priority-queued voice advisories   │
+│   Visual HUD        → Real-time OpenCV telemetry overlay             │
+│   Audio Alerts      → Non-blocking priority-queued voice advisories   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 💻 Hardware Profiles & VRAM Allocation
+##  Hardware Profiles & VRAM Allocation
 
 | Feature | RTX 3050 Ti (Dev & Profiling) | Jetson Orin Nano (Production) |
 |---|---|---|
@@ -58,7 +58,7 @@ The architecture separates latency-critical perception (Tier 1 in pure Rust + ON
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 ADAS-Hybrid/
@@ -98,9 +98,9 @@ ADAS-Hybrid/
 
 ---
 
-## 🚀 Progress & Implementation Status
+##  Progress & Implementation Status
 
-### ✅ Phase 1: Rust Perception Core (Completed)
+###  Phase 1: Rust Perception Core (Completed)
 - [x] **Kalman Filter Engine (`kalman.rs`)**: 4-state constant velocity motion model, custom matrix algebra (`Mat4`, `Mat2x4`, `Mat4x2`), innovation covariance and gain updates.
 - [x] **Lane Perception (`lane_detect.rs`)**: Preprocessing to CHW normalized tensors, UFLD-v2 anchor row classification output decoder, and classic Canny/Hough backup.
 - [x] **Lane Stability & Safety (`lane_manager.rs`)**: Alpha-blended polyline temporal smoothing, ego-lane center offset calculation, and drift/departure state machine (`DRIFTING_LEFT`, `DEPARTED_RIGHT`, etc.).
@@ -109,7 +109,7 @@ ADAS-Hybrid/
 - [x] **PyO3 Integration Hub (`lib.rs`)**: `AdasBrain`, `Tracker`, and `LaneManager` exported to Python; migrated to `ort 2.0-rc` API with zero-copy array operations.
 - [x] **Compilation Verified**: Clean compile on Rust 2021 edition against `ort 2.0.0-rc.13` and `pyo3 0.21.2`.
 
-### 🔄 Phase 2: Python Orchestration & Intelligence Layer (Next)
+### Phase 2: Python Orchestration & Intelligence Layer (Next)
 - [ ] Pyproject configuration & Maturin build setup
 - [ ] `app/main.py` non-blocking main loop
 - [ ] `app/display.py` HUD visualization overlay
@@ -118,19 +118,19 @@ ADAS-Hybrid/
 - [ ] `app/fusion.py` advisory engine & conflict resolution
 - [ ] `app/vlm_engine.py` SmolVLM benchmarking hook
 
-### ⏳ Phase 3: Export & Training Utilities
+###  Phase 3: Export & Training Utilities
 - [ ] ONNX export & INT8 quantization scripts
 - [ ] LISA / Bosch dataset traffic light fine-tuning scripts
 - [ ] Jetson TensorRT + DLA engine compilation scripts
 
-### ⏳ Phase 4: Models & Hardware Deployment
+###  Phase 4: Models & Hardware Deployment
 - [ ] ONNX weights export & verification
 - [ ] Latency benchmarking on RTX 3050 Ti (<10ms target)
 - [ ] Jetson Orin Nano cross-compilation & deployment
 
 ---
 
-## 🛠️ Building & Verifying Rust Core
+##  Building & Verifying Rust Core
 
 ### Prerequisites
 - **Rust Toolchain** (1.75+ recommended): `cargo`, `rustc`
