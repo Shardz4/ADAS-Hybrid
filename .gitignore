@@ -29,7 +29,20 @@ models/*.bin
 models/*.engine
 models/vlm/
 *.onnx
+*.onnx.data
 *.engine
+*.pt
+*.pth
+
+# External Cloned Repositories
+Ultra-Fast-Lane-Detection-v2/
+
+# Datasets, training runs & media
+datasets/
+runs/
+*.mp4
+*.avi
+*.mkv
 
 # IDEs & OS files
 .vscode/

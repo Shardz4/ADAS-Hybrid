@@ -21,6 +21,12 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
     if not os.path.exists(weights_path):
         sys.exit(f"Error: Weights file '{weights_path}' not found. To generate a test model without external weights, run with '--stub'.")
 
+    repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
+    if os.path.exists(os.path.join(repo_dir, "model")) and repo_dir not in sys.path:
+        sys.path.insert(0, repo_dir)
+    elif os.path.exists("Ultra-Fast-Lane-Detection-v2") and "Ultra-Fast-Lane-Detection-v2" not in sys.path:
+        sys.path.insert(0, os.path.abspath("Ultra-Fast-Lane-Detection-v2"))
+
     print(f"Loading config: {config_path}")
     import importlib.util
     spec = importlib.util.spec_from_file_location("config", config_path)
@@ -34,7 +40,13 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
         state = state["model"]
     elif "state_dict" in state:
         state = state["state_dict"]
-    model.load_state_dict(state, strict=False)
+    compatible_state = {}
+    for k, v in state.items():
+        if k.startswith("module."):
+            compatible_state[k[7:]] = v
+        else:
+            compatible_state[k] = v
+    model.load_state_dict(compatible_state, strict=False)
     model.eval()
 
     print(f"Exporting model")
@@ -67,6 +79,29 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
 
 def build_ufld_model(cfg):
     try:
+        from utils.common import get_model
+        return get_model(cfg)
+    except Exception:
+        pass
+    try:
+        from model.model_culane import parsingNet
+        model = parsingNet(
+            pretrained=False,
+            backbone=getattr(cfg, "backbone", "18"),
+            num_grid_row=getattr(cfg, "num_cell_row", 100),
+            num_cls_row=getattr(cfg, "num_row_anchors", 56),
+            num_grid_col=getattr(cfg, "num_cell_col", 100),
+            num_cls_col=getattr(cfg, "num_col_anchors", 41),
+            num_lane_on_row=getattr(cfg, "num_lanes", 4),
+            num_lane_on_col=getattr(cfg, "num_lanes", 4),
+            use_aux=False,
+            input_height=getattr(cfg, "train_height", 288),
+            input_width=getattr(cfg, "train_width", 800),
+        )
+        return model
+    except ImportError:
+        pass
+    try:
         from model.model2 import parsingNet
         model = parsingNet(
             size=(288, 800),
@@ -80,7 +115,7 @@ def build_ufld_model(cfg):
         return model
     except ImportError:
         raise NotImplementedError(
-            "Could not import 'parsingNet' from UFLD-v2 repository.\n"
+            "Could not import model from UFLD-v2 repository.\n"
             "Clone UFLD-v2 (https://github.com/cfzd/Ultra-Fast-Lane-Detection-v2) or use --stub for testing."
         )
 
