@@ -26,5 +26,4 @@ dev = [
 [tool.maturin]
 manifest-path = "../rust_core/Cargo.toml"
 module-name = "adas_hybrid"
-python-source = "."
 features = []
