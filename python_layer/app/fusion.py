@@ -81,7 +81,7 @@ class PerceptionFusion:
         elif warning_count == 1:
             level = "WARNING"
             suggested_action = "SLOW_DOWN"
-            top_threat = threats[0]
+            top_threat = next((t for t in threats if t.get("severity") in ("WARNING", "DANGER")), threats[0])
             if top_threat["type"] == "COLLISION_WARNING":
                 message = f"CAUTION: Closing on {top_threat['label']} ({top_threat['ttc']:.1f}s TTC)"
             elif top_threat["type"] == "LANE_DRIFT":

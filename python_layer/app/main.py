@@ -18,9 +18,9 @@ from app.scene_analyzer import SceneAnalyzer
 
 class AdasPipeline:
     def __init__(self, args):
-        vehicle_model = args.vehicle_model or "models/yolo11n.onnx"
-        sign_model = args.sign_model or "models/traffic_signs.onnx"
-        lane_model = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else None
+        vehicle_model = args.vehicle_model or ("models/yolo26n.onnx" if os.path.exists("models/yolo26n.onnx") else "models/yolo11n.onnx")
+        sign_model = args.sign_model if (args.sign_model and os.path.exists(args.sign_model)) else None
+        lane_model = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else ("models/ufld_culane.onnx" if os.path.exists("models/ufld_culane.onnx") else None)
         light_det = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
         light_cls = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
 
@@ -87,6 +87,8 @@ class AdasPipeline:
                         v["label"],
                     ))
                 tracked = self.tracker.process_frame(det_tuples, dt)
+                if lanes:
+                    self.lane_mgr.update_polylines(lanes, float(w))
                 departure = self.lane_mgr.check_departure(float(w), float(h))
 
                 tier1_results = {
@@ -131,7 +133,7 @@ class AdasPipeline:
 def main():
     parser = argparse.ArgumentParser(description="Real-Time Hybrid ADAS Perception Engine")
     parser.add_argument("--video", type=str, default="0", help="Video path, RTSP stream, or webcam index (default: 0)")
-    parser.add_argument("--vehicle-model", type=str, default=None, help="Path to YOLO11 vehicle ONNX model")
+    parser.add_argument("--vehicle-model", type=str, default=None, help="Path to YOLO26 vehicle ONNX model")
     parser.add_argument("--sign-model", type=str, default=None, help="Path to traffic signs ONNX model")
     parser.add_argument("--lane-model", type=str, default=None, help="Path to UFLD lane ONNX model")
     parser.add_argument("--light-det-model", type=str, default=None, help="Path to traffic light detector ONNX model")

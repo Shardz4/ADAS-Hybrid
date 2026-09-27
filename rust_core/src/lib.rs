@@ -17,7 +17,7 @@ use traffic_light::{detect_traffic_light_hsv, TrafficLightDetector};
 #[pyclass]
 pub struct AdasBrain {
     vehicle_session: Session,
-    sign_session: Session,
+    sign_session: Option<Session>,
     lane_session: Option<Session>,
     light_detector: Option<TrafficLightDetector>,
 }
@@ -25,10 +25,10 @@ pub struct AdasBrain {
 #[pymethods]
 impl AdasBrain {
     #[new]
-    #[pyo3(signature = (vehicle_model, sign_model, lane_model=None, light_det_model=None, light_cls_model=None))]
+    #[pyo3(signature = (vehicle_model, sign_model=None, lane_model=None, light_det_model=None, light_cls_model=None))]
     pub fn new(
         vehicle_model: &str,
-        sign_model: &str,
+        sign_model: Option<&str>,
         lane_model: Option<&str>,
         light_det_model: Option<&str>,
         light_cls_model: Option<&str>,
@@ -43,7 +43,10 @@ impl AdasBrain {
         };
 
         let vehicle_session = build(vehicle_model).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
-        let sign_session = build(sign_model).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        let sign_session = match sign_model {
+            Some(path) => Some(build(path).map_err(pyo3::exceptions::PyRuntimeError::new_err)?),
+            None => None,
+        };
 
         let lane_session = match lane_model {
             Some(path) => Some(build(path).map_err(pyo3::exceptions::PyRuntimeError::new_err)?),
@@ -236,6 +239,14 @@ impl AdasBrain {
         height: u32,
         conf_threshold: f32,
     ) -> PyResult<PyObject> {
+        let session = match self.sign_session.as_mut() {
+            Some(s) => s,
+            None => {
+                let py_list = PyList::empty_bound(py);
+                return Ok(py_list.into());
+            }
+        };
+
         let mut chw = vec![0.0f32; 3 * 320 * 320];
         let x_scale = width as f32 / 320.0;
         let y_scale = height as f32 / 320.0;
@@ -256,7 +267,7 @@ impl AdasBrain {
         let tensor = Tensor::from_array(([1usize, 3, 320, 320], chw))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let outputs = self.sign_session.run(ort::inputs!["images" => tensor])
+        let outputs = session.run(ort::inputs!["images" => tensor])
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let (_, data) = outputs[0].try_extract_tensor::<f32>()
@@ -400,6 +411,18 @@ impl LaneManager {
         img_width: f64,
     ) -> (Option<(f64, f64, f64, f64)>, Option<(f64, f64, f64, f64)>) {
         self.inner.update_lines(raw_lines, img_width)
+    }
+
+    pub fn update_polylines(&mut self, polylines: Vec<Vec<(f64, f64)>>, img_width: f64) {
+        let lane_polylines = polylines
+            .into_iter()
+            .map(|pts| crate::lane_detect::LanePolyline {
+                points: pts,
+                confidence: 1.0,
+                lane_index: 0,
+            })
+            .collect();
+        self.inner.update_polylines(lane_polylines, img_width);
     }
 
     pub fn check_departure(&self, img_width: f64, img_height: f64) -> String {

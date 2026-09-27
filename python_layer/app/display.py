@@ -107,7 +107,7 @@ class HudRenderer:
         cv2.putText(
             frame,
             ctx_str,
-            (w - 480, 30),
+            (max(10, w - 480), 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
             (255, 255, 255),

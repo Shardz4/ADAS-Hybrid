@@ -3,12 +3,24 @@ import os
 import sys
 import numpy as np
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 def export_from_checkpoint(config_path: str, weights_path: str, output: str):
     try:
         import torch
     except ImportError:
         sys.exit("Error: torch is required for this script")
     
+    if not os.path.exists(config_path):
+        sys.exit(f"Error: Config file '{config_path}' not found. To generate a test model without external weights, run with '--stub'.")
+    if not os.path.exists(weights_path):
+        sys.exit(f"Error: Weights file '{weights_path}' not found. To generate a test model without external weights, run with '--stub'.")
+
     print(f"Loading config: {config_path}")
     import importlib.util
     spec = importlib.util.spec_from_file_location("config", config_path)
@@ -34,7 +46,7 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
         output,
         input_names=["input"],
         output_names=["output"],
-        opset_version=17,
+        opset_version=18,
         dynamic_axes=None,
     )
 
@@ -110,7 +122,7 @@ def export_stub_model(output: str):
         output,
         input_names=["input"],
         output_names=["output"],
-        opset_version=17,
+        opset_version=18,
         dynamic_axes=None,
     )
     verify_ufld_onnx(output)
