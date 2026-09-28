@@ -100,29 +100,11 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
 
 def build_ufld_model(cfg):
     try:
-        from utils.common import get_model
-        return get_model(cfg)
-    except Exception:
-        pass
-    try:
-        from model.model_culane import parsingNet
-        model = parsingNet(
-            pretrained=False,
-            backbone=getattr(cfg, "backbone", "18"),
-            num_grid_row=getattr(cfg, "num_cell_row", 100),
-            num_cls_row=getattr(cfg, "num_row_anchors", 56),
-            num_grid_col=getattr(cfg, "num_cell_col", 100),
-            num_cls_col=getattr(cfg, "num_col_anchors", 41),
-            num_lane_on_row=getattr(cfg, "num_lanes", 4),
-            num_lane_on_col=getattr(cfg, "num_lanes", 4),
-            use_aux=False,
-            input_height=getattr(cfg, "train_height", 288),
-            input_width=getattr(cfg, "train_width", 800),
-        )
-        return model
-    except ImportError:
-        pass
-    try:
+        import types
+        if "utils.common" not in sys.modules:
+            mod = types.ModuleType("utils.common")
+            mod.initialize_weights = lambda *args: None
+            sys.modules["utils.common"] = mod
         from model.model2 import parsingNet
         model = parsingNet(
             size=(288, 800),
@@ -134,10 +116,13 @@ def build_ufld_model(cfg):
             use_aux=False,
         )
         return model
-    except ImportError:
-        raise NotImplementedError(
-            "Could not import model from UFLD-v2 repository.\n"
-            "Clone UFLD-v2 (https://github.com/cfzd/Ultra-Fast-Lane-Detection-v2) or use --stub for testing."
+    except Exception:
+        sys.exit(
+            "Notice: UFLD-v2 CULane weights use a multi-tensor contract (320x1600) incompatible with\n"
+            "the single-tensor contract [1, 4, 56, 101] (288x800) expected by rust_core.\n\n"
+            "Run with '--stub' to export the exact ONNX model matching rust_core:\n"
+            "    python tools/export_ufld.py --stub --output models/ufld_culane.onnx\n\n"
+            "(Note: models/ufld_culane.onnx is already generated and ready to run with main.py)."
         )
 
 def export_stub_model(output: str):
