@@ -3,6 +3,7 @@ import os
 import sys
 
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_project_root = os.path.dirname(_parent_dir)
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
@@ -21,13 +22,42 @@ from app.fusion import PerceptionFusion
 from app.scene_analyzer import SceneAnalyzer
 
 
+def resolve_path(p: str):
+    if not p:
+        return None
+    if os.path.isabs(p) and os.path.exists(p):
+        return p
+    if os.path.exists(p):
+        return p
+    cand = os.path.join(_project_root, p)
+    if os.path.exists(cand):
+        return cand
+    return p
+
+
+def find_model(user_arg, default_name):
+    if user_arg:
+        res = resolve_path(user_arg)
+        if os.path.exists(res):
+            return res
+    for candidate in [
+        os.path.join("models", default_name),
+        os.path.join(_project_root, "models", default_name),
+        default_name,
+        os.path.join(_project_root, default_name),
+    ]:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 class AdasPipeline:
     def __init__(self, args):
-        vehicle_model = args.vehicle_model or ("models/yolo26n.onnx" if os.path.exists("models/yolo26n.onnx") else "models/yolo11n.onnx")
-        sign_model = args.sign_model if (args.sign_model and os.path.exists(args.sign_model)) else None
-        lane_model = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else ("models/ufld_culane.onnx" if os.path.exists("models/ufld_culane.onnx") else None)
-        light_det = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
-        light_cls = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
+        vehicle_model = find_model(args.vehicle_model, "yolo26n.onnx") or find_model(None, "yolo11n.onnx")
+        sign_model = find_model(args.sign_model, "traffic_signs.onnx")
+        lane_model = find_model(args.lane_model, "ufld_culane.onnx")
+        light_det = find_model(args.light_det_model, "light_det.onnx")
+        light_cls = find_model(args.light_cls_model, "light_cls.onnx")
 
         self.brain = adas_hybrid.AdasBrain(
             vehicle_model=vehicle_model,
@@ -50,8 +80,18 @@ class AdasPipeline:
             self.vlm = VLMEngine()
 
     def run(self, source):
-        video_src = int(source) if str(source).isdigit() else source
+        if str(source).isdigit():
+            video_src = int(source)
+        else:
+            video_src = resolve_path(str(source))
         cap = cv2.VideoCapture(video_src)
+
+        if not cap.isOpened() and str(source) == "0":
+            fallback = resolve_path("data/example.mp4")
+            if fallback and os.path.exists(fallback):
+                print(f"Webcam 0 unavailable. Falling back to '{fallback}'...")
+                video_src = fallback
+                cap = cv2.VideoCapture(video_src)
 
         if not cap.isOpened():
             print(f"Error: Unable to open video source '{source}'")

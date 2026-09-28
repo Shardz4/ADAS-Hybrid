@@ -200,8 +200,8 @@ def main():
 
     sign_m = args.sign_model if (args.sign_model and os.path.exists(args.sign_model)) else ("models/traffic_signs.onnx" if os.path.exists("models/traffic_signs.onnx") else None)
     lane_m = args.lane_model if (args.lane_model and os.path.exists(args.lane_model)) else ("models/ufld_culane.onnx" if os.path.exists("models/ufld_culane.onnx") else None)
-    ldet_m = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else None
-    lcls_m = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else None
+    ldet_m = args.light_det_model if (args.light_det_model and os.path.exists(args.light_det_model)) else ("models/light_det.onnx" if os.path.exists("models/light_det.onnx") else None)
+    lcls_m = args.light_cls_model if (args.light_cls_model and os.path.exists(args.light_cls_model)) else ("models/light_cls.onnx" if os.path.exists("models/light_cls.onnx") else None)
 
     metrics, vram = run_benchmark(
         video_source=args.video,

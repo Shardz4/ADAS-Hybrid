@@ -77,13 +77,14 @@ def train(data_dir: str, epochs: int, batch_size: int, lr: float, device: str, p
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     train_loader, val_loader = get_dataloaders(data_dir, batch_size=batch_size)
-    best_acc = 0.0
+    best_acc = -1.0
     start_epoch = 0
     no_improve_count = 0
     run_dir = os.path.join("runs", "light_cls")
     best_weights = os.path.join(run_dir, "best.pt")
     last_checkpoint = os.path.join(run_dir, "last_checkpoint.pt")
     os.makedirs(run_dir, exist_ok=True)
+    torch.save(model.state_dict(), best_weights)
 
     if resume and os.path.exists(resume):
         print(f"  Resuming from checkpoint: {resume}")
@@ -176,7 +177,7 @@ def export_to_onnx(weights_path: str, output: str, device: str = "cpu"):
         output,
         input_names=["input"],
         output_names=["output"],
-        opset_version=17,
+        opset_version=18,
         dynamic_axes=None,
     )
     try:
