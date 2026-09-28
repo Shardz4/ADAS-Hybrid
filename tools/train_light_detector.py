@@ -161,6 +161,8 @@ def main():
         args.data = create_dataset_yaml(yolo_dir, os.path.join(yolo_dir, "dataset.yaml"))
     if not args.data:
         sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
+    if not os.path.exists(args.data):
+        sys.exit(f"Error: Dataset YAML '{args.data}' not found. Download the LISA dataset and use '--lisa-dir <folder>', or provide a valid YOLO dataset yaml.")
     best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume)
     if args.export and best_ckpt:
         export_to_onnx(best_ckpt, args.output, args.imgsz)
