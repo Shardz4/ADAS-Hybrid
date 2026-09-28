@@ -17,6 +17,27 @@ def export_from_checkpoint(config_path: str, weights_path: str, output: str):
         sys.exit("Error: torch is required for this script")
     
     if not os.path.exists(config_path):
+        for candidate in [
+            os.path.join("Ultra-Fast-Lane-Detection-v2", "configs", os.path.basename(config_path)),
+            os.path.join("Ultra-Fast-Lane-Detection-v2", config_path),
+            os.path.join("configs", os.path.basename(config_path)),
+        ]:
+            if os.path.exists(candidate):
+                config_path = candidate
+                break
+
+    if not os.path.exists(weights_path):
+        for candidate in [
+            os.path.basename(weights_path),
+            "culane_res18.pth",
+            os.path.join("Ultra-Fast-Lane-Detection-v2", os.path.basename(weights_path)),
+            os.path.join("Ultra-Fast-Lane-Detection-v2", "culane_res18.pth"),
+        ]:
+            if os.path.exists(candidate):
+                weights_path = candidate
+                break
+
+    if not os.path.exists(config_path):
         sys.exit(f"Error: Config file '{config_path}' not found. To generate a test model without external weights, run with '--stub'.")
     if not os.path.exists(weights_path):
         sys.exit(f"Error: Weights file '{weights_path}' not found. To generate a test model without external weights, run with '--stub'.")
