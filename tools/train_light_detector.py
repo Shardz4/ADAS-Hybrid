@@ -9,10 +9,13 @@ import numpy as np
 
 def create_dataset_yaml(data_dir: str, output_yaml: str):
     """Generate YOLO dataset YAML config for single-class traffic light detection."""
+    abs_data = os.path.abspath(data_dir)
+    train_dir = "train/images" if os.path.exists(os.path.join(abs_data, "train", "images")) else "images/train"
+    val_dir = "val/images" if os.path.exists(os.path.join(abs_data, "val", "images")) else ("images/val" if os.path.exists(os.path.join(abs_data, "images", "val")) else train_dir)
     yaml_content = f"""# Traffic Light Detection Dataset
-path: {os.path.abspath(data_dir)}
-train: images/train
-val: images/val
+path: {abs_data}
+train: {train_dir}
+val: {val_dir}
 nc: 1
 names:
   0: traffic_light
@@ -24,10 +27,14 @@ names:
 
 
 def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
-    images_dir = Path(output_dir) / "images" / "train"
-    labels_dir = Path(output_dir) / "labels" / "train"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    labels_dir.mkdir(parents=True, exist_ok=True)
+    train_img = Path(output_dir) / "train" / "images"
+    train_lbl = Path(output_dir) / "train" / "labels"
+    val_img = Path(output_dir) / "val" / "images"
+    val_lbl = Path(output_dir) / "val" / "labels"
+    train_img.mkdir(parents=True, exist_ok=True)
+    train_lbl.mkdir(parents=True, exist_ok=True)
+    val_img.mkdir(parents=True, exist_ok=True)
+    val_lbl.mkdir(parents=True, exist_ok=True)
 
     candidates = [
         os.path.join(lisa_dir, "Annotations", "Annotations.csv"),
@@ -64,8 +71,13 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
             image_labels[basename]["boxes"].append((x1, y1, x2, y2))
 
     import cv2
-    for basename, info in image_labels.items():
-        dst_img = images_dir / basename
+    items = list(image_labels.items())
+    val_cutoff = int(len(items) * 0.8) if len(items) > 1 else len(items)
+    for idx, (basename, info) in enumerate(items):
+        target_img_dir = train_img if idx < val_cutoff else val_img
+        target_lbl_dir = train_lbl if idx < val_cutoff else val_lbl
+
+        dst_img = target_img_dir / basename
         if not dst_img.exists():
             shutil.copy2(info["src"], dst_img)
         img = cv2.imread(str(dst_img))
@@ -73,7 +85,7 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
             continue
         ih, iw = img.shape[:2]
         label_name = Path(basename).stem + ".txt"
-        with open(labels_dir / label_name, "w") as lf:
+        with open(target_lbl_dir / label_name, "w") as lf:
             for (x1, y1, x2, y2) in info["boxes"]:
                 cx = max(0.0, min(1.0, ((x1 + x2) / 2.0) / iw))
                 cy = max(0.0, min(1.0, ((y1 + y2) / 2.0) / ih))
@@ -156,11 +168,17 @@ def main():
     parser.add_argument("--output", type=str, default="models/light_det.onnx")
     args = parser.parse_args()
     if args.lisa_dir:
+        if not os.path.exists(args.lisa_dir):
+            sys.exit(f"Error: LISA dataset directory '{args.lisa_dir}' does not exist.")
         yolo_dir = os.path.join("datasets", "lisa_yolo")
         convert_lisa_to_yolo(args.lisa_dir, yolo_dir)
         args.data = create_dataset_yaml(yolo_dir, os.path.join(yolo_dir, "dataset.yaml"))
     if not args.data:
-        sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
+        default_yaml = os.path.join("datasets", "lisa.yaml")
+        if os.path.exists(default_yaml):
+            args.data = default_yaml
+        else:
+            sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
     if not os.path.exists(args.data):
         sys.exit(f"Error: Dataset YAML '{args.data}' not found. Download the LISA dataset and use '--lisa-dir <folder>', or provide a valid YOLO dataset yaml.")
     best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume)
