@@ -194,9 +194,88 @@ def export_to_onnx(weights_path: str, output: str, device: str = "cpu"):
         print(f"Verification warning: {e}")
 
 
+def extract_lisa_crops(lisa_dir: str, output_dir: str, max_per_class: int = 1500):
+    import csv
+    from pathlib import Path
+    import cv2
+    import random
+
+    lisa_path = Path(lisa_dir)
+    out_path = Path(output_dir)
+    print("  Indexing LISA images for state classifier extraction...")
+    image_map = {p.name: p for ext in ("*.jpg", "*.png", "*.jpeg") for p in lisa_path.rglob(ext)}
+    box_csvs = list(lisa_path.rglob("*BOX*.csv"))
+
+    classes = {"red": [], "yellow": [], "green": []}
+    for cp in box_csvs:
+        with open(cp, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f, delimiter=";")
+            next(reader, None)
+            for row in reader:
+                if len(row) < 6:
+                    continue
+                fn = os.path.basename(row[0].strip().replace("\\", "/"))
+                if fn not in image_map:
+                    continue
+                tag = row[1].strip().lower()
+                try:
+                    box = tuple(map(float, row[2:6]))
+                except ValueError:
+                    continue
+                if "stop" in tag:
+                    classes["red"].append((image_map[fn], box))
+                elif "warning" in tag:
+                    classes["yellow"].append((image_map[fn], box))
+                elif "go" in tag:
+                    classes["green"].append((image_map[fn], box))
+
+    for split in ("train", "val"):
+        for cls_name in CLASS_NAMES:
+            (out_path / split / cls_name).mkdir(parents=True, exist_ok=True)
+
+    random.seed(42)
+    for cls_name, items in classes.items():
+        random.shuffle(items)
+        selected = items[:max_per_class]
+        val_cutoff = int(len(selected) * 0.8)
+        for idx, (img_path, (x1, y1, x2, y2)) in enumerate(selected):
+            split = "train" if idx < val_cutoff else "val"
+            img = cv2.imread(str(img_path))
+            if img is None:
+                continue
+            h_img, w_img = img.shape[:2]
+            x1_c, y1_c = max(0, int(x1)), max(0, int(y1))
+            x2_c, y2_c = min(w_img, int(x2)), min(h_img, int(y2))
+            if x2_c <= x1_c or y2_c <= y1_c:
+                continue
+            crop = img[y1_c:y2_c, x1_c:x2_c]
+            crop_resized = cv2.resize(crop, (INPUT_W, INPUT_H))
+            save_path = out_path / split / cls_name / f"{cls_name}_{idx}.jpg"
+            cv2.imwrite(str(save_path), crop_resized)
+
+    selected_greens = classes["green"][:max_per_class]
+    val_cutoff = int(len(selected_greens) * 0.8)
+    for idx, (img_path, (x1, y1, x2, y2)) in enumerate(selected_greens):
+        split = "train" if idx < val_cutoff else "val"
+        img = cv2.imread(str(img_path))
+        if img is None:
+            continue
+        h_img, w_img = img.shape[:2]
+        bx1, by1 = max(0, int(x1) - 40), max(0, int(y1) - 40)
+        bx2, by2 = min(w_img, bx1 + 32), min(h_img, by1 + 64)
+        if bx2 > bx1 and by2 > by1:
+            bg_crop = img[by1:by2, bx1:bx2]
+            crop_resized = cv2.resize(bg_crop, (INPUT_W, INPUT_H))
+            save_path = out_path / split / "none" / f"none_{idx}.jpg"
+            cv2.imwrite(str(save_path), crop_resized)
+
+    print(f"  Extracted real LISA crops into {output_dir}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train Traffic Light State Classifier")
-    parser.add_argument("--data", type=str, required=True, help="Path to cropped dataset folder")
+    parser.add_argument("--data", type=str, default=None, help="Path to cropped dataset folder")
+    parser.add_argument("--lisa-dir", type=str, default=None, help="Path to raw LISA dataset folder")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -205,6 +284,20 @@ def main():
     parser.add_argument("--export", action="store_true", help="Auto-export ONNX on completion")
     parser.add_argument("--output", type=str, default="models/light_cls.onnx")
     args = parser.parse_args()
+
+    if not args.data:
+        if os.path.exists(os.path.join("datasets", "light_cls")):
+            args.data = os.path.join("datasets", "light_cls")
+        elif os.path.exists(os.path.join("datasets", "lisa")):
+            args.lisa_dir = os.path.join("datasets", "lisa")
+
+    if args.lisa_dir and (not args.data or not os.path.exists(args.data)):
+        args.data = os.path.join("datasets", "light_cls")
+        extract_lisa_crops(args.lisa_dir, args.data)
+
+    if not args.data or not os.path.exists(args.data):
+        sys.exit("Error: Must provide --data <folder> or --lisa-dir <folder>")
+
     device = "cuda" if has_cuda() else "cpu"
     best_ckpt = train(args.data, args.epochs, args.batch_size, args.lr, device, args.patience, args.resume)
     if args.export and best_ckpt:

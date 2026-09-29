@@ -26,7 +26,7 @@ names:
     return output_yaml
 
 
-def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
+def convert_lisa_to_yolo(lisa_dir: str, output_dir: str, max_images: int = None):
     train_img = Path(output_dir) / "train" / "images"
     train_lbl = Path(output_dir) / "train" / "labels"
     val_img = Path(output_dir) / "val" / "images"
@@ -36,48 +36,51 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
     val_img.mkdir(parents=True, exist_ok=True)
     val_lbl.mkdir(parents=True, exist_ok=True)
 
-    candidates = [
-        os.path.join(lisa_dir, "Annotations", "Annotations.csv"),
-        os.path.join(lisa_dir, "frameAnnotationsBOX.csv"),
-        os.path.join(lisa_dir, "allAnnotations.csv"),
-    ]
-    annotations_file = next((c for c in candidates if os.path.exists(c)), None)
-    if not annotations_file:
-        for p in Path(lisa_dir).rglob("*.csv"):
-            if "annotation" in p.name.lower() or "box" in p.name.lower():
-                annotations_file = str(p)
-                break
+    print("  Indexing LISA image files on disk...")
+    image_map = {}
+    for ext in ("*.jpg", "*.png", "*.jpeg"):
+        for p in Path(lisa_dir).rglob(ext):
+            image_map[p.name] = p
 
-    if not annotations_file:
-        print(f" No annotation file found in {lisa_dir}")
+    box_csvs = list(Path(lisa_dir).rglob("*BOX*.csv"))
+    if not box_csvs:
+        box_csvs = [p for p in Path(lisa_dir).rglob("*.csv") if "annotation" in p.name.lower()]
+
+    if not box_csvs:
+        print(f" No annotation files found in {lisa_dir}")
         return 0
 
-    count = 0
+    print(f"  Found {len(box_csvs)} annotation CSVs and {len(image_map):,} images.")
     image_labels = {}
+    count = 0
 
-    with open(annotations_file, "r") as f:
-        reader = csv.reader(f, delimiter=";")
-        next(reader, None)
+    for csv_path in box_csvs:
+        with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f, delimiter=";")
+            next(reader, None)
+            for row in reader:
+                if len(row) < 6:
+                    continue
+                basename = os.path.basename(row[0].strip().replace("\\", "/"))
+                if basename not in image_map:
+                    continue
+                try:
+                    x1, y1, x2, y2 = float(row[1]), float(row[2]), float(row[3]), float(row[4])
+                except (ValueError, IndexError):
+                    continue
+                if basename not in image_labels:
+                    image_labels[basename] = {"src": image_map[basename], "boxes": []}
+                image_labels[basename]["boxes"].append((x1, y1, x2, y2))
 
-        for row in reader:
-            if len(row) < 6:
-                continue
-            img_path = row[0].strip()
-            try:
-                x1, y1, x2, y2 = float(row[1]), float(row[2]), float(row[3]), float(row[4])
-            except (ValueError, IndexError):
-                continue
-            img_full = os.path.join(lisa_dir, img_path)
-            if not os.path.exists(img_full):
-                continue
-            basename = os.path.basename(img_path)
-            if basename not in image_labels:
-                image_labels[basename] = {"src": img_full, "boxes": []}
-            image_labels[basename]["boxes"].append((x1, y1, x2, y2))
-
-    import cv2
     items = list(image_labels.items())
+    if max_images and len(items) > max_images:
+        import random
+        random.seed(42)
+        random.shuffle(items)
+        items = items[:max_images]
+
     val_cutoff = int(len(items) * 0.8) if len(items) > 1 else len(items)
+    import cv2
     for idx, (basename, info) in enumerate(items):
         target_img_dir = train_img if idx < val_cutoff else val_img
         target_lbl_dir = train_lbl if idx < val_cutoff else val_lbl
@@ -98,7 +101,7 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
                 bh = max(0.0, min(1.0, (y2 - y1) / ih))
                 lf.write(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
                 count += 1
-    print(f"  Converted {count} bounding boxes from {len(image_labels)} images.")
+    print(f"  Converted {count} bounding boxes from {len(items)} images into {output_dir}.")
     return count
 
 def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt", patience: int = 10, resume: bool = False):
@@ -164,6 +167,7 @@ def main():
                         help="Base YOLO26 model checkpoint (default: yolo26n.pt)")
     parser.add_argument("--data", type=str, default=None, help="Path to dataset.yaml")
     parser.add_argument("--lisa-dir", type=str, default=None, help="Path to raw LISA dataset folder")
+    parser.add_argument("--max-images", type=int, default=None, help="Optional limit on images to convert for faster training")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--imgsz", type=int, default=320)
@@ -172,18 +176,22 @@ def main():
     parser.add_argument("--export", action="store_true", help="Auto-export to ONNX upon completion")
     parser.add_argument("--output", type=str, default="models/light_det.onnx")
     args = parser.parse_args()
+
+    if not args.data and not args.lisa_dir:
+        if os.path.exists(os.path.join("datasets", "lisa")):
+            args.lisa_dir = os.path.join("datasets", "lisa")
+        elif os.path.exists(os.path.join("datasets", "lisa.yaml")):
+            args.data = os.path.join("datasets", "lisa.yaml")
+
     if args.lisa_dir:
         if not os.path.exists(args.lisa_dir):
             sys.exit(f"Error: LISA dataset directory '{args.lisa_dir}' does not exist.")
         yolo_dir = os.path.join("datasets", "lisa_yolo")
-        convert_lisa_to_yolo(args.lisa_dir, yolo_dir)
+        convert_lisa_to_yolo(args.lisa_dir, yolo_dir, max_images=args.max_images)
         args.data = create_dataset_yaml(yolo_dir, os.path.join(yolo_dir, "dataset.yaml"))
+
     if not args.data:
-        default_yaml = os.path.join("datasets", "lisa.yaml")
-        if os.path.exists(default_yaml):
-            args.data = default_yaml
-        else:
-            sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
+        sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
     if not os.path.exists(args.data):
         sys.exit(f"Error: Dataset YAML '{args.data}' not found. Download the LISA dataset and use '--lisa-dir <folder>', or provide a valid YOLO dataset yaml.")
     best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume)
