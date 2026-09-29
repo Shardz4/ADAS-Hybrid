@@ -139,10 +139,14 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
         exist_ok=True,
         verbose=True,
     )
-    best_path = os.path.join("runs", "light_det", "light_detector_yolo26", "weights", "best.pt")
-    if os.path.exists(best_path):
-        print(f"\n Training complete. Best checkpoint: {best_path}")
-        return best_path
+    candidates = [
+        os.path.join("runs", "detect", "runs", "light_det", "light_detector_yolo26", "weights", "best.pt"),
+        os.path.join("runs", "light_det", "light_detector_yolo26", "weights", "best.pt"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            print(f"\n Training complete. Best checkpoint: {c}")
+            return c
     return None
 
 def export_to_onnx(weights_path: str, output: str, imgsz: int = 320):
