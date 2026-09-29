@@ -42,6 +42,11 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str):
         os.path.join(lisa_dir, "allAnnotations.csv"),
     ]
     annotations_file = next((c for c in candidates if os.path.exists(c)), None)
+    if not annotations_file:
+        for p in Path(lisa_dir).rglob("*.csv"):
+            if "annotation" in p.name.lower() or "box" in p.name.lower():
+                annotations_file = str(p)
+                break
 
     if not annotations_file:
         print(f" No annotation file found in {lisa_dir}")
