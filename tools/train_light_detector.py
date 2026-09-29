@@ -65,7 +65,7 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str, max_images: int = None)
                 if basename not in image_map:
                     continue
                 try:
-                    x1, y1, x2, y2 = float(row[1]), float(row[2]), float(row[3]), float(row[4])
+                    x1, y1, x2, y2 = float(row[2]), float(row[3]), float(row[4]), float(row[5])
                 except (ValueError, IndexError):
                     continue
                 if basename not in image_labels:
@@ -80,18 +80,18 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str, max_images: int = None)
         items = items[:max_images]
 
     val_cutoff = int(len(items) * 0.8) if len(items) > 1 else len(items)
-    import cv2
+    iw, ih = 1280, 960
     for idx, (basename, info) in enumerate(items):
         target_img_dir = train_img if idx < val_cutoff else val_img
         target_lbl_dir = train_lbl if idx < val_cutoff else val_lbl
 
         dst_img = target_img_dir / basename
         if not dst_img.exists():
-            shutil.copy2(info["src"], dst_img)
-        img = cv2.imread(str(dst_img))
-        if img is None:
-            continue
-        ih, iw = img.shape[:2]
+            try:
+                os.link(info["src"], dst_img)
+            except Exception:
+                shutil.copy2(info["src"], dst_img)
+
         label_name = Path(basename).stem + ".txt"
         with open(target_lbl_dir / label_name, "w") as lf:
             for (x1, y1, x2, y2) in info["boxes"]:
