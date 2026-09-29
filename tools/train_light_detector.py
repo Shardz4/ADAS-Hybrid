@@ -104,18 +104,23 @@ def convert_lisa_to_yolo(lisa_dir: str, output_dir: str, max_images: int = None)
     print(f"  Converted {count} bounding boxes from {len(items)} images into {output_dir}.")
     return count
 
-def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt", patience: int = 10, resume: bool = False):
+def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: int = 16, base_model: str = "yolo26n.pt", patience: int = 10, resume: bool = False, device: str = None):
     """Fine-tune the YOLO26-Nano detector on traffic light fixtures."""
     try:
         from ultralytics import YOLO
     except ImportError:
         sys.exit("Error: ultralytics package required: pip install ultralytics")
+    import torch
+    if device is None:
+        device = 0 if torch.cuda.is_available() else "cpu"
+    dev_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() and str(device) != "cpu" else "CPU"
     print(f"\n[TRAIN] Training YOLO26 Traffic Light Detector")
     print(f"  Base Model:  {base_model}")
     print(f"  Dataset:     {data_yaml}")
     print(f"  Resolution:  {imgsz}x{imgsz}")
     print(f"  Epochs:      {epochs}")
     print(f"  Batch:       {batch}")
+    print(f"  Device:      {device} ({dev_name})")
     print(f"  Patience:    {patience} (early stopping)")
     print(f"  Resume:      {resume}\n")
     model = YOLO(base_model)
@@ -124,6 +129,7 @@ def train_yolo26_detector(data_yaml: str, epochs: int, imgsz: int = 320, batch: 
         epochs=epochs,
         imgsz=imgsz,
         batch=batch,
+        device=device,
         patience=patience,
         resume=resume,
         save=True,
@@ -174,6 +180,7 @@ def main():
     parser.add_argument("--patience", type=int, default=10, help="Early stopping patience (epochs without improvement)")
     parser.add_argument("--resume", action="store_true", help="Resume training from last checkpoint after crash")
     parser.add_argument("--export", action="store_true", help="Auto-export to ONNX upon completion")
+    parser.add_argument("--device", type=str, default=None, help="Device to train on (e.g. 0, cpu)")
     parser.add_argument("--output", type=str, default="models/light_det.onnx")
     args = parser.parse_args()
 
@@ -194,7 +201,7 @@ def main():
         sys.exit("Error: Must provide --data <dataset.yaml> or --lisa-dir <folder>")
     if not os.path.exists(args.data):
         sys.exit(f"Error: Dataset YAML '{args.data}' not found. Download the LISA dataset and use '--lisa-dir <folder>', or provide a valid YOLO dataset yaml.")
-    best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume)
+    best_ckpt = train_yolo26_detector(args.data, args.epochs, args.imgsz, args.batch, args.base_model, args.patience, args.resume, device=args.device)
     if args.export and best_ckpt:
         export_to_onnx(best_ckpt, args.output, args.imgsz)
 
