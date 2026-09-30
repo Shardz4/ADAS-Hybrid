@@ -479,6 +479,8 @@ def main():
     parser.add_argument("--patience", type=int, default=8, help="Early stopping patience")
     parser.add_argument("--max-per-class", type=int, default=2000, help="Max crops per class to extract from LISA")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader num_workers")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from (e.g. runs/light_cls/last_checkpoint.pt)")
+    parser.add_argument("--device", type=str, default=None, help="Device to use ('cuda' or 'cpu', default: auto-detect)")
     parser.add_argument("--extract-only", action="store_true", help="Extract crops from LISA and exit without training")
     parser.add_argument("--check-cuda", action="store_true", help="Verify CUDA acceleration and environment readiness then exit")
     parser.add_argument("--export", action="store_true", help="Auto-export ONNX on completion")
@@ -504,7 +506,7 @@ def main():
             print("\n[INFO] Data extraction complete. --extract-only specified; exiting before training.")
             return
 
-    device = "cuda" if has_cuda() else "cpu"
+    device = args.device or ("cuda" if has_cuda() else "cpu")
 
     if args.check_cuda:
         verify_cuda_readiness(args.data, device)
