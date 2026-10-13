@@ -321,8 +321,16 @@ impl AdasBrain {
 
         let py_list = PyList::empty_bound(py);
         for (bbox, conf, class_id) in detections {
+            let label = match class_id {
+                0 => "stop",
+                1 => "yield",
+                2 => "speed_limit",
+                3 => "warning",
+                _ => "sign",
+            };
             let dict = PyDict::new_bound(py);
             dict.set_item("class_id", class_id)?;
+            dict.set_item("label", label)?;
             dict.set_item("conf", conf)?;
             dict.set_item("bbox", vec![bbox[0], bbox[1], bbox[2], bbox[3]])?;
             py_list.append(dict)?;
