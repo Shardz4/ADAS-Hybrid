@@ -92,9 +92,10 @@ class HudRenderer:
             bx = sign.get("bbox", [0, 0, 0, 0])
             sx1, sy1, sx2, sy2 = map(int, bx)
             cv2.rectangle(frame, (sx1, sy1), (sx2, sy2), (255, 128, 0), 2)
+            sign_name = sign.get("label", f"SIGN {sign.get('class_id', '')}").replace("_", " ").upper()
             cv2.putText(
                 frame,
-                f"SIGN {sign.get('class_id', '')}",
+                sign_name,
                 (sx1, max(15, sy1 - 4)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.45,

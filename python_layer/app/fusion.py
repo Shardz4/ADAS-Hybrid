@@ -64,9 +64,17 @@ class PerceptionFusion:
         # Traffic signs
         for sign in tier1.get("signs", []):
             cid = sign.get("class_id", -1)
-            if cid == 0:  # Stop sign
+            lbl = sign.get("label", "").lower()
+            if cid == 0 or lbl == "stop":
                 warning_count += 1
                 threats.append({"type": "STOP_SIGN", "severity": "WARNING"})
+            elif cid == 1 or lbl == "yield":
+                threats.append({"type": "YIELD_SIGN", "severity": "INFO"})
+            elif cid == 2 or lbl == "speed_limit":
+                threats.append({"type": "SPEED_LIMIT", "severity": "INFO"})
+            elif cid == 3 or lbl == "warning":
+                warning_count += 1
+                threats.append({"type": "ROAD_HAZARD_SIGN", "severity": "WARNING"})
 
         # advisory
         if danger_count > 0 or warning_count >= 2:
@@ -90,6 +98,8 @@ class PerceptionFusion:
                 message = "CAUTION: Red Traffic Light Ahead"
             elif top_threat["type"] == "STOP_SIGN":
                 message = "CAUTION: Stop Sign Ahead"
+            elif top_threat["type"] == "ROAD_HAZARD_SIGN":
+                message = "CAUTION: Speed Breaker / Hazard Sign Ahead"
             else:
                 message = "WARNING: Hazard Ahead"
         else:
